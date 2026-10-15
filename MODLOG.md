@@ -1,0 +1,109 @@
+# Diario de investigación AC6 VR
+
+## 2026-10-15 — reconocimiento inicial
+
+- Confirmada la instalación local y los mods de primera persona y cooperativo. `um scan` detectó tecnología FromSoftware, ejecutable x64 y Easy Anti-Cheat, sin otro cargador detectado.
+- El usuario aclaró que utiliza el launcher cooperativo expresamente porque permite arrancar la versión modificada sin EAC. La descripción publicada del mod lo confirma, aunque **no se ha observado todavía un arranque local**.
+- Script repetible y sin dependencias: `python tools/fingerprint_ac6.py`. Verificó la coincidencia exacta del mod de primera persona instalado, copia `.bck` distinta y DLL/launcher del cooperativo. Encontró importaciones de `d3d12.dll`/`dxgi.dll` en `armoredcore6.exe`.
+- Registro de OpenXR de Windows: SteamVR seleccionado. No se ha verificado un visor conectado ni la creación de una sesión OpenXR.
+- REA: `open_binary` correcto para `armoredcore6.exe`, SHA-256 `e003771e5548bca91882c1d7dfe2df3de97cee05c2c989d0c0e34b036ea610d6`. `binary_overview` agotó el tiempo de espera de 300 s. Evitar repetir indiscriminadamente el análisis completo del ejecutable de 111 MB; usar búsquedas enfocadas o herramientas de análisis por segmentos.
+- Fuentes revisadas: documentación del mod cooperativo, mod de cámara original, *Enhanced First Person Camera* (compatible con 1.09 según su ficha), notas oficiales del parche 1.09.
+- El directorio inicial del proyecto solo contenía `mods/` y no era un repositorio Git. Todavía no se ha creado uno.
+- Archivos creados en el proyecto: `MODDING_PLAN.md`, `MODLOG.md`, `tools/fingerprint_ac6.py`.
+
+## Próximo experimento
+
+La primera persona ya está probada por el usuario y Depth of Field ya está desactivado. Validar el objeto y matriz activos identificados en `CAMERA_FINDINGS.md`, registrar FPS/versiones y comprobar pulse/assault armor, melee y aceleraciones. Mantener respaldos antes de editar parámetros, partidas o instalación.
+
+## 2026-10-15 — prueba funcional y herramientas operativas
+
+- El usuario confirma arranque mediante launcher cooperativo y juego en primera persona sin problemas. Evidencia: testimonio del usuario en este chat, no captura propia del agente.
+- Las herramientas de shell, escritura del proyecto, `um scan`, `um win ps` y `REA binary_session` han respondido. En esta ejecución no se ha observado el bloqueo de seguridad mencionado en la respuesta anterior.
+- REA reconoció el ejecutable correcto y seleccionó Ghidra 12.1.4. Su búsqueda de cadenas de cámara agotó el límite MCP de 300 s durante el análisis automático; se cerró correctamente la sesión con `close_binary`. No hay resultado de descompilación atribuible a REA en este pase.
+- `um win ps` y consulta de procesos no encontraron AC6 en ejecución. No se ha iniciado ni inyectado el juego durante esta fase.
+- Relectura de `GraphicsConfig.xml`: DoF desactivado, fullscreen configurado 2560×1440, motion blur HIGH. No se cambió el archivo.
+- Referencias públicas clonadas bajo `reference/`: IGCS-GITC y ac6-freecam. Esta última solo declara soporte 1.06.1; no usar sus direcciones fijas en 1.09.
+- `tools/inspect_camera_signatures.py` encontró firmas únicas de lectura de cámara (RVA `0x151ece6`), copia de matriz (`0x6bfef6`) y FOV (`0x6f038b`) en el ejecutable actual. Viñeta es ambigua (dos coincidencias). Informe en `evidence/camera-signatures.json`; hipótesis, límites y fuentes en `CAMERA_FINDINGS.md`.
+- Visor confirmado expresamente por el usuario: **PSVR2 con adaptador oficial de PC, mediante SteamVR**.
+- Alternativa al timeout: importación directa en Ghidra instalado con `-noanalysis` y script propio que limita el desensamblado a dos rangos `.pdata`; los resultados derivados se guardan fuera del proyecto en `%LOCALAPPDATA%/ac6-vr-analysis/`. Repetición mediante `python -B tools/run_camera_analysis.py`.
+- El wrapper `analyzeHeadless.bat` falló con el paréntesis de `Program Files (x86)`; el lanzador Python usa argumentos estructurados y conserva los VMARGS de `launch.properties`, sin modificar la instalación de Ghidra ni las políticas de REA.
+- Ghidra directo terminó con código 0, `DecompileComplete=true` para ambos candidatos. Informes privados en `C:/Users/Oni/AppData/Local/ac6-vr-analysis/camera_20261015_140331-output/`. Pseudocódigo y desensamblado no se guardaron en el repositorio.
+- La rutina de actualización llama a la de copia con el destino `[rsi+0x28]`. El punto de captura original de IGCS es condicional. Después aparece una copia de la matriz al destino de la cadena `*(base+0x4f71c70) -> *(global+0xc6a8) -> matriz+0x110`; candidato para lectura externa en la próxima prueba, aún sin verificar en vivo.
+- Limitación conservada: los saltos fragmentan las funciones fuera de sus rangos unwind; el listado parcial no equivale a cobertura completa. Detalles en `CAMERA_FINDINGS.md`.
+
+## 2026-10-15 — ModEngine y lectura de cámara en misión
+
+- El usuario arrancó por `C:/Users/Oni/Desktop/ModEngine-2.1.0.0-win64/launchmod_armoredcore6.bat` con el mod en `mod/`. Confirmó estar en una misión y que falló la conexión con Epic; offline supuesto por el usuario, no medido.
+- Proceso inspeccionado: AC6 PID 15060, base `0x140000000`, módulo `modengine2.dll` presente y cooperativo ausente. No se detectaron proceso o módulos de EAC en las consultas realizadas. ModEngine log confirma carpeta `mod`, tres hooks y versión 2.1.0.
+- Tres archivos de regulación idénticos: Game, ModEngine/mod y proyecto. Esto explica la ausencia de diferencia visual; no demuestra el origen de los datos realmente leídos.
+- Añadida sonda `tools/observe_camera.py`: identidad/hash/opcode comprobados, acceso solo consulta+lectura, proceso explícito, captura local sin sobrescritura y parada tras tres errores consecutivos.
+- Captura inicial: 13/13 muestras finitas, matriz ortonormal y cambiante. Cadena candidata recorrida correctamente en ejecución.
+- El usuario dejó quieto el AC para una prueba guiada. Captura de 20 s: 200/200 muestras finitas, 163 cambios, orientación inicial estable y giro máximo 58.57°, error de ortogonalidad máximo 1.79e-7. No se registraron input/imagen; ventanas de giro manual aproximadas.
+- Resultado: transformación viva consistente con cámara de misión. Aún sin escritura, control de cámara, HMD o dos vistas por ojo. Las direcciones heap solo valen para esta sesión. Datos y límites en `CAMERA_FINDINGS.md` y `evidence/camera-live-summary.json`.
+
+## 2026-10-15 — corrección del mod activo
+
+- El usuario sustituyó el antiguo mod de primera persona por **Enhanced First Person Camera** (Nexus 305), preset **120°** (89° verticales según el autor), sin probarlo aún en el juego. No instaló ni utilizó otras herramientas de la guía.
+- El directorio del proyecto ahora contiene `mods/FIrst Person Camera/regulation.bin` (1 124 432 bytes); su SHA-256 `71b06ff97e9d8792e50e874e990ee4878cc1d7234f6a75d4a170fdea11a72b67` coincide exactamente con el archivo activo en `Game/`. El antiguo hash `d2fc6d...` es histórico y ya no describe el archivo activo.
+- La carpeta del cooperativo se llama ahora `mods/Armored Core VI co-op/`.
+- Se actualizó el script de fingerprint y la documentación para reflejar los nombres actuales. La ruta VR nativa sigue sin empezar a ejecutarse.
+- Página del autor: https://www.nexusmods.com/armoredcore6firesofrubicon/mods/305?tab=description ; ficheros: https://www.nexusmods.com/armoredcore6firesofrubicon/mods/305?tab=files .
+
+## 2026-10-15 — cooperativo, OpenXR y control visual estable
+
+- Sesión actual: primera misión mediante launcher cooperativo; PID 32616. Se verificó `ac6_coop.dll` presente y ausencia de EAC en las consultas. La cadena de lectura volvió a funcionar (21 muestras finitas).
+- SteamVR/OpenVR: `PS VR2`, fabricante `SIE`, 160/160 poses válidas `Running_OK`, tamaño recomendado 2804×2860 por ojo. Headers/licencia oficiales de Valve bajo `reference/openvr/`.
+- OpenXR: `XR_MND_headless` v3 disponible. `tools/probe_openxr_headless.py` creó sesión real, alcanzó estados 1,2,3,4,5 (FOCUSED), obtuvo 391/391 poses con flags 15 y dos vistas con FOV asimétrico. IPD medido ~0.065 m. Sin swapchains ni imagen VR. Datos: `evidence/openxr-headpose-20261015-first.jsonl`.
+- Backup previo a escrituras: `C:/Users/Oni/.universal-modder/backups/ac6-before-camera-control/20261015-162810.zip` (7 archivos, 117.6 MB). Incluye partidas/config; restaurarlo revertiría progresos posteriores.
+- Prueba externa sobre espejo: 1912 escrituras en 3 s, sin giro visto por el usuario; el juego repuso la matriz. No usar ese método como control estable.
+- Getter RVA `0x6ef560`: `mov rax,[rcx+8]; ret`. Cámara fuente por `*(base+0x4e09e80) -> *(manager+8)`, matriz `+0x10`. Campo `+0x58`: 1.553343 rad (~89° verticales), coherente con el mod.
+- Prueba externa sobre fuente: 1911 escrituras en 3 s y restauración. El usuario vio la imagen doblarse varias veces. Las capturas puntuales no lo reflejaron. Posible desincronización; causa exacta no establecida.
+- Toolchain existente: MSVC VS Build Tools 2022, cl 19.44.35229, SDK 10.0.26100.0. No se instaló un compilador.
+- MinHook v1.3.4, commit `c3fcafdc10146beb5919319d0683e44e3c30d537`, en `reference/minhook/`. Sonda temporal `native/camera_probe`: hook en copia RVA `0x6bfe50`, filtro por cámara fuente, modifica orientación del primer destino coincidente después del original y se desactiva automáticamente. F12 cancela; no altera EAC/DRM ni archivos del juego.
+- El usuario aprobó expresamente la prueba nativa. Resultado: 360 aplicaciones en 3 s (~120/s), 0 excepciones, `MH_DisableHook=MH_OK`. El usuario confirmó que la imagen se movió a un punto y volvió sin glitches.
+- Error del lector Python al abrir el log aún retenido por CRT; no afectó a la prueba nativa. Se corrigió tolerancia a archivo abierto y el código futuro comparte lectura. Auditoría posterior confirmó prólogo restaurado: `evidence/camera-native-probe-audit.json`. DLL/trampoline desactivado quedan mapeados para evitar carrera al descargarlos; worker terminado.
+- Pruebas: 5 tests Python de orientación/recentrado/convenciones y 1 test nativo de yaw local y traslación; fallaron antes de implementar y pasaron después. CMake avisa del mínimo antiguo de MinHook; compilación correcta.
+- Próximo ensayo: unir las poses OpenXR a este punto de cámara. Aún sin seguimiento de cabeza conectado ni renderizado estéreo.
+
+## 2026-10-15 — seguimiento PSVR2 confirmado en el monitor
+
+- El usuario autorizó el ensayo con el AC quieto y girando el visor. Se ejecutó productor OpenXR de 26 s con publicación para PID 32616 y `ac6_headtracking_probe.dll` con 15 s de seguimiento activo, orientación inicial como centro, límite 25° y cancelación F12.
+- Productor: 1267/1267 poses válidas, sin conversión opcional `flip_z`. Sonda: 1767 aplicaciones, 0 excepciones registradas, desactivación `MH_OK` y prólogo restaurado. Ambos procesos de prueba finalizaron con código 0; el juego seguía respondiendo después.
+- El usuario confirmó: «lo he visto en monitor moverse cuando yo movia el visor si, funcionaba bien».
+- Evidencia: `evidence/headtracking-native-result.json`, `evidence/openxr-headtracking-live.jsonl`, `evidence/openxr-headtracking-publisher.log`, capturas `coop-headtracking-active`, `active_later` y `after`.
+- Las pruebas de orientación se ampliaron a 8 tests Python y 1 test nativo. Se conserva el carácter experimental: orientación 3DoF, sin persistencia, salida al visor, estereoscopía o traslación.
+- Se actualizaron el plan y hallazgos; instrucciones de repetición en `HEADTRACKING_RUNBOOK.md`. Las dos DLL de prueba permanecen mapeadas e inactivas hasta cerrar el juego. Próxima etapa pendiente: presentación D3D12/OpenXR y después render binocular.
+- Verificación posterior a la confirmación del usuario: 8/8 tests Python y 1/1 test nativo pasan. Auditoría de solo lectura sobre el proceso aún activo confirma nuevamente prólogo original restaurado y ambas DLL mapeadas: `evidence/headtracking-post-trial-audit.json` (14:57:42 UTC). No se volvió a activar la sonda.
+
+## 2026-10-15 — prueba de presentación D3D12/OpenXR en preparación
+
+- El usuario indicó «adelante» tras presentar como siguiente etapa la imagen en el visor y estereoscopía. Primera comprobación: aplicación diagnóstica independiente con sesión gráfica OpenXR/D3D12, sin modificar la instalación ni volver a activar los hooks de cámara.
+- Ruta elegida: dispositivo en el adaptador LUID exigido por OpenXR, swapchains D3D12, capas quad con patrón identificable por ojo, bucle wait/begin/end, fences y salida temporal/F12. Una capa plana verifica presentación y escala; no demuestra render estereoscópico del mundo de AC6.
+- Extensión posterior del diagnóstico: captura de la ventana concreta de AC6 con Windows Graphics Capture para presentar una pantalla virtual con imagen viva, si la primera prueba gráfica funciona. Esta ruta no proporciona profundidad del juego; permite separar transporte de imagen y reconstrucción binocular.
+- Referencias oficiales consultadas: `https://github.com/KhronosGroup/OpenXR-SDK-Source/blob/main/src/tests/hello_xr/graphicsplugin_d3d12.cpp` y documentación Microsoft Windows Graphics Capture. Headers/licencia OpenXR en `reference/openxr/`; nuevas descargas con hashes en `evidence/openxr-display-reference-downloads.json`.
+- Aplicación `native/xr_display_probe`: compila con MSVC existente. Test de conversión BGRA/RGBA, stride y proporción observado fallar y después pasar; captura WGC de la ventana AC6 sin enviar input ni enganchar renderer.
+- Patrón por ojo: `evidence/xr-display-worn-01.jsonl`, 1791 frames enviados, 1699 enfocados. El usuario confirmó cuadrícula y letras correctas en cada ojo. Las capas planas no prueban estereoscopía de geometría del juego.
+- Primera captura del juego: 566 imágenes capturadas, pero SteamVR no marcó la sesión como visible (`xr-game-window-01.jsonl`). Se añadió margen de 30 s para ponerse el visor, duración contada desde VISIBLE y resultado no satisfactorio si nunca hay frames enfocados.
+- Repetición `evidence/xr-game-window-02.jsonl`: 1799 frames enviados, 1798 enfocados, 563 capturas (562 distintas de la anterior). El usuario confirmó imagen del juego viva y sin problemas apreciables en la pantalla virtual. Preview de la captura inspeccionado: `evidence/xr-game-window-02.bmp`.
+- Siguiente integración acotada: publicar orientación desde la misma sesión gráfica OpenXR y presentar el contenido fijado a la vista, para validar simultáneamente visor/cámara. Seguirá siendo monoscópico y temporal; no confundir con dos vistas geométricas del mundo.
+
+## 2026-10-15 — imagen y seguimiento combinados, ejes corregidos
+
+- Aplicación gráfica y `ac6_headtracking_display_probe.dll`: 2391 envíos, 737 capturas, 2201 poses válidas publicadas y 1761 aplicaciones de cámara en 15 s. El usuario confirmó funcionamiento dentro del visor, pero detectó inversión tanto horizontal como vertical. La aceptación anterior en monitor no había validado específicamente ambos sentidos.
+- Hipótesis de conversión de coordenadas: OpenXR usa avance -Z; reflejar Z al componer la matriz cambia yaw/pitch y conserva roll. Se añadió test nativo específico, observado fallar y pasar. `CameraRows()` aplica `S R S`, `S=diag(1,1,-1)` al delta relativo limitado; no se cambió el callback.
+- Nueva sonda temporal `ac6_headtracking_calibrated_probe.dll`, SHA-256 `ad3a9f4e06067cd76a0b8964eb053391899a40986d0d8bebb71a813e391e6b9c`, identificada en `evidence/calibrated-headtracking-native-result.json`. El cambio de orientación se realiza en el productor gráfico. Se conservan las versiones previas sin sobrescribir DLL cargadas.
+- Prueba calibrada: 2425 envíos, 2424 enfocados, 747 capturas (746 cambios), 2424 poses válidas publicadas y 1794 aplicaciones de cámara en 15 s, 0 excepciones. Desactivación `MH_OK` y prólogo restaurado. Ambos procesos de prueba terminaron con código 0; el juego sigue respondiendo.
+- El usuario confirmó ambos ejes correctos y señaló alcance reducido; se explicó el límite deliberado de 25° de rotación total. Roll, posición y combate no probados. Sigue siendo imagen monoscópica capturada a ~30 Hz, sin render binocular del juego.
+- Revisión de código por subagente según `requesting-code-review`: dos hallazgos P2, pérdida de captura conservaba imagen vieja y fallo de fence podía liberar recursos pendientes. Se corrigió ocultación/invalidez después de 500 ms sin captura, estado de fallo registrado y salida no satisfactoria; test red/green. En fallo de sincronización con dispositivo aún activo se termina solo el proceso de presentación sin desenrollar objetos COM en uso, dejando cancelar el contexto al SO. No se ha forzado un fallo GPU en hardware.
+- Smoke posterior `evidence/xr-display-post-review-smoke.jsonl`: 902 capturas, 901 cambios, 0 pérdidas de captura y cierre normal de sesión. Sin frames FOCUSED (visor no solicitado para esta comprobación), devolvió resultado no satisfactorio como corresponde; no cuenta como otra validación visual.
+- Verificación final: 8 tests Python, 1 nativo de cámara y 2 nativos de imagen/orientación pasan. Todos los Python de `tools/` pasan análisis sintáctico. Script reutilizable `tools/run_vr_trial.py`: ayuda y rechazo de recarga de DLL ya mapeada comprobados, sin otra inyección.
+- Auditoría de lectura final: `evidence/vr-calibrated-final-audit.json`, prólogo original confirmado, cuatro DLL inertes mapeadas. Aplicación gráfica cerrada; juego PID 32616 responde. Estado y repetición en `VR_DISPLAY_FINDINGS.md`; trabajo pendiente: renderer, latencia, estereoscopía, amplitud y persistencia.
+- La revisión de seguimiento confirmó ambos hallazgos resueltos por inspección, sin nuevos bloqueos en estas dos correcciones. No equivale a una prueba de fallo GPU en hardware ni a estereoscopía del mundo.
+
+## 2026-10-15 — investigación de recursos D3D12
+
+- El usuario pidió continuar y autorizó expresamente instalar dependencias/herramientas locales necesarias. Sesión AC6 aún PID 32616 y responde; no se reinició el juego.
+- No se encontró RenderDoc en PATH, Program Files o la carpeta de herramientas local. REA instalado dispone de Ghidra, pero no de captura de frames D3D12 en su inventario anunciado. No repetir el análisis global del ejecutable.
+- Primera sonda elegida: observar Present, ExecuteCommandLists y ResourceBarrier mediante MinHook, sin cambiar comandos gráficos ni copiar recursos. Las transiciones DEPTH_WRITE/DEPTH_READ incluyen punteros a recursos ya existentes, evitando depender de capturar su creación al arrancar.
+- Comprobar antes en un proceso propio: dispositivo/cola/swapchain y textura depth sintéticos; observar las llamadas y restaurar sus prólogos. Después inventario temporal en la misión cooperativa. Los índices de vtable se derivan de `offsetof` de las interfaces C del SDK Windows, no de números supuestos.
+- Referencias Microsoft: `https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12graphicscommandlist-resourcebarrier` y `https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12graphicscommandlist-copytextureregion`.
