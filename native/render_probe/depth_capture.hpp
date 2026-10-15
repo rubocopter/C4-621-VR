@@ -19,13 +19,27 @@ public:
     UINT rows=0; UINT64 row_bytes=0,total=0;
     bool synthetic_ok=false;
     UINT recorded_batch_count=0;
+    UINT recorded_subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    std::atomic<ID3D12Resource*> selected_resource{nullptr};
+    std::atomic<unsigned long long> eligible_seen{0},overlap_rejected{0};
+    std::atomic<UINT> last_subresource{0},last_before{0},last_after{0},last_flags{0},last_batch{0},last_list_type{0};
     void Discover(ID3D12Resource* resource) {
-        if(stage.load()!=Empty) return;
+        auto observed=stage.load();
+        if((observed!=Empty && observed!=Selected) || selected_resource.load()==resource) return;
         const auto d=resource->GetDesc();
-        if(d.Dimension!=D3D12_RESOURCE_DIMENSION_TEXTURE2D || d.Width!=2560 || d.Height!=1440 ||
+        if(d.Dimension!=D3D12_RESOURCE_DIMENSION_TEXTURE2D || d.Width<128 || d.Height<128 ||
            d.Format!=DXGI_FORMAT_R32G8X24_TYPELESS || d.SampleDesc.Count!=1 || d.DepthOrArraySize!=1 || d.MipLevels!=1) return;
-        Stage expected=Empty; if(!stage.compare_exchange_strong(expected,Selecting)) return;
-        source=resource; desc=d; stage.store(Selected);
+        if(!stage.compare_exchange_strong(observed,Selecting)) return;
+        if(!source || d.Width*d.Height>desc.Width*desc.Height) {
+            source=resource; desc=d; selected_resource.store(resource);
+        }
+        stage.store(Selected);
+    }
+    void NoteCandidate(const D3D12_RESOURCE_BARRIER& b,UINT batch_count,bool unique,D3D12_COMMAND_LIST_TYPE type) {
+        if(stage.load()!=Armed || b.Type!=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION || b.Transition.pResource!=source.Get()) return;
+        ++eligible_seen; if(!unique) ++overlap_rejected;
+        last_subresource=b.Transition.Subresource; last_before=b.Transition.StateBefore;
+        last_after=b.Transition.StateAfter; last_flags=b.Flags; last_batch=batch_count; last_list_type=type;
     }
     void Prepare() {
         Stage expected=Selected; if(!stage.compare_exchange_strong(expected,Preparing)) return;
@@ -50,6 +64,7 @@ public:
            (t.Subresource!=0 && t.Subresource!=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES) || list->GetType()!=D3D12_COMMAND_LIST_TYPE_DIRECT) return;
         Stage expected=Armed; if(!stage.compare_exchange_strong(expected,Recording)) return;
         recorded_batch_count=batch_count;
+        recorded_subresource=t.Subresource;
         D3D12_RESOURCE_BARRIER b{}; b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         b.Transition.pResource=source.Get(); b.Transition.Subresource=0;
         b.Transition.StateBefore=t.StateAfter; b.Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
@@ -90,7 +105,9 @@ public:
         stage.store(Complete); return true;
     }
     void Log(FILE* file) {
-        std::fprintf(file,"{\"phase\":\"depth_capture\",\"stage\":%u,\"written\":%s,\"width\":%llu,\"height\":%u,\"source_format\":%u,\"footprint_format\":%u,\"offset\":%llu,\"row_pitch\":%u,\"row_bytes\":%llu,\"rows\":%u,\"total_bytes\":%llu,\"batch_count\":%u,\"synthetic_ok\":%s}\n",
-            unsigned(stage.load()),stage.load()==Complete?"true":"false",desc.Width,desc.Height,desc.Format,footprint.Footprint.Format,footprint.Offset,footprint.Footprint.RowPitch,row_bytes,rows,total,recorded_batch_count,synthetic_ok?"true":"false");
+        std::fprintf(file,"{\"phase\":\"capture_eligibility\",\"candidates\":%llu,\"overlap_rejected\":%llu,\"last_subresource\":%u,\"last_before\":%u,\"last_after\":%u,\"last_flags\":%u,\"last_batch\":%u,\"last_list_type\":%u}\n",
+            eligible_seen.load(),overlap_rejected.load(),last_subresource.load(),last_before.load(),last_after.load(),last_flags.load(),last_batch.load(),last_list_type.load());
+        std::fprintf(file,"{\"phase\":\"depth_capture\",\"stage\":%u,\"written\":%s,\"width\":%llu,\"height\":%u,\"source_format\":%u,\"footprint_format\":%u,\"offset\":%llu,\"row_pitch\":%u,\"row_bytes\":%llu,\"rows\":%u,\"total_bytes\":%llu,\"batch_count\":%u,\"subresource\":%u,\"synthetic_ok\":%s}\n",
+            unsigned(stage.load()),stage.load()==Complete?"true":"false",desc.Width,desc.Height,desc.Format,footprint.Footprint.Format,footprint.Offset,footprint.Footprint.RowPitch,row_bytes,rows,total,recorded_batch_count,recorded_subresource,synthetic_ok?"true":"false");
     }
 };

@@ -2,6 +2,8 @@
 
 15-10-2026, SteamVR/OpenXR y adaptador oficial PC. Se mostró el juego en el visor y el usuario confirmó seguimiento horizontal/vertical correcto tras calibrar los ejes. Es un diagnóstico temporal monoscópico, no una adaptación VR terminada.
 
+**Actualización posterior:** existe una ruta opcional de captura por GPU, una muestra real de profundidad y una corrección para seguir la cabeza en sesiones VISIBLE sin exigir foco de inputs. Estado y pruebas actuales en `RENDER_CAPTURE_FINDINGS.md`. Las cifras y la política FOCUSED descritas abajo corresponden a los primeros ensayos.
+
 ## Qué funciona y cómo se comprobó
 
 | Ensayo | Evidencia | Resultado |

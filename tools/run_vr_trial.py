@@ -1,7 +1,8 @@
 """Run the bounded, calibrated monoscopic AC6/PSVR2 trial.
 
 Requires a fresh cooperative single-player game session. Starts display output,
-waits for OpenXR focus, then loads the 15-second camera probe. No game-file edits.
+waits for visible tracked head poses, then loads the 15-second camera probe.
+No game-file edits. Controller-input focus is not required for VIEW-space poses.
 """
 import argparse
 import hashlib
@@ -20,6 +21,7 @@ def main():
     parser.add_argument("--pid", type=int, required=True)
     parser.add_argument("--single-player-confirmed", action="store_true", required=True)
     parser.add_argument("--tag", required=True, help="New evidence name: letters, numbers, hyphen or underscore")
+    parser.add_argument("--gpu-capture", action="store_true", help="Use GPU shared textures instead of CPU pixel readback")
     args = parser.parse_args()
     if args.pid <= 0 or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", args.tag):
         parser.error("Invalid PID or evidence tag")
@@ -53,26 +55,33 @@ def main():
     folder.mkdir(parents=True, exist_ok=True)
     report = {"pid": args.pid, "game_files_changed": False, "game_geometry_stereo": False,
               "coordinate_conversion": "reflect_z", "rotation_limit_degrees": 25,
+              "capture_transport": "gpu_shared_texture" if args.gpu_capture else "cpu_readback",
               "display_sha256": hashlib.sha256(exe.read_bytes()).hexdigest(),
               "dll_sha256": hashlib.sha256(dll.read_bytes()).hexdigest()}
     with console.open("x", encoding="utf-8") as stream:
-        app = subprocess.Popen([str(exe), "--seconds", "27", "--game-pid", str(args.pid),
-                                "--headtracking", "--output", str(display)], cwd=root,
+        display_command = [str(exe), "--seconds", "27", "--game-pid", str(args.pid), "--headtracking", "--output", str(display)]
+        if args.gpu_capture:
+            display_command.append("--gpu-capture")
+        app = subprocess.Popen(display_command, cwd=root,
                                stdout=stream, stderr=subprocess.STDOUT,
                                creationflags=subprocess.CREATE_NO_WINDOW)
         try:
             deadline = time.monotonic() + 35
             focused = False
+            tracking_ready = False
             while app.poll() is None and time.monotonic() < deadline:
                 if display.exists():
                     rows = [json.loads(s) for s in display.read_text(encoding="utf-8").splitlines() if s.endswith("}")]
                     focused = any(r.get("kind") == "session_state" and r.get("state") == 5 for r in rows)
-                    if focused:
+                    progress = [r for r in rows if r.get("kind") == "progress"]
+                    tracking_ready = bool(progress and progress[-1].get("tracking_ready"))
+                    if tracking_ready:
                         break
                 time.sleep(0.1)
             report["focused_before_hook"] = focused
-            if focused:
-                print("OpenXR focused: starting the bounded camera trial.", flush=True)
+            report["tracking_ready_before_hook"] = tracking_ready
+            if tracking_ready:
+                print("OpenXR visible with tracked head pose: starting the bounded camera trial.", flush=True)
                 loaded = subprocess.run([sys.executable, "-B", str(root / "tools/load_camera_probe.py"),
                     "--pid", str(args.pid), "--single-player-confirmed", "--dll", str(dll),
                     "--capture", str(capture), "--output", str(native)], cwd=root,

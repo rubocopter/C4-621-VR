@@ -86,15 +86,17 @@ static void STDMETHODCALLTYPE ObserveBarrier(ID3D12GraphicsCommandList* list,UIN
     }
     original_barrier(list,count,items);
 #ifdef AC6_DEPTH_CAPTURE
-    // Unrelated transitions may be batched with the depth transition. Copy only
-    // when no other item can change or alias this resource in the same batch.
+    // Only plane 0 is copied. A stencil-plane transition for the same resource
+    // does not change that plane's state and must not reject the batch.
     if(depth_capture.stage.load()==DepthCapture::Armed) for(UINT i=0;i<count;++i) {
         if(items[i].Type!=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION || items[i].Transition.pResource!=depth_capture.source.Get()) continue;
         bool unique=true;
         for(UINT j=0;j<count;++j) if(j!=i) {
-            if(items[j].Type==D3D12_RESOURCE_BARRIER_TYPE_TRANSITION && items[j].Transition.pResource==items[i].Transition.pResource) unique=false;
+            if(items[j].Type==D3D12_RESOURCE_BARRIER_TYPE_TRANSITION && items[j].Transition.pResource==items[i].Transition.pResource &&
+               (items[j].Transition.Subresource==0 || items[j].Transition.Subresource==D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)) unique=false;
             if(items[j].Type==D3D12_RESOURCE_BARRIER_TYPE_ALIASING) unique=false;
         }
+        depth_capture.NoteCandidate(items[i],count,unique,list->GetType());
         if(unique) depth_capture.AfterBarrier(list,items[i],original_barrier,count);
     }
 #endif

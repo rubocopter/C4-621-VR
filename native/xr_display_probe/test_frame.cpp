@@ -28,6 +28,12 @@ int main() {
         Check(CaptureFresh(1000,500,true),"A 500 ms image should remain within the limit");
         Check(!CaptureFresh(1001,500,true),"Stale image must be rejected");
         Check(!CaptureFresh(499,500,true),"Future timestamp must be rejected");
+        Check(HeadTrackingReady(true,true,true,true,true),"Visible tracked head pose must not require controller input focus");
+        Check(!HeadTrackingReady(false,true,true,true,true),"Hidden session must not control the game camera");
+        Check(!HeadTrackingReady(true,false,true,true,true),"Non-rendering session must not control the game camera");
+        Check(!HeadTrackingReady(true,true,false,true,true),"Stale image must stop camera tracking");
+        Check(!HeadTrackingReady(true,true,true,false,true),"Invalid orientation must stop camera tracking");
+        Check(!HeadTrackingReady(true,true,true,true,false),"Untracked orientation must stop camera tracking");
         std::cout << "Window frame tests passed\n";
         return 0;
     } catch(const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

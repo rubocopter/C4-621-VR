@@ -36,7 +36,7 @@ struct DummyDevice {
     void ExerciseDepth(void(*prepare)(ID3D12Resource*)=nullptr) {
         D3D12_HEAP_PROPERTIES heap{}; heap.Type=D3D12_HEAP_TYPE_DEFAULT;
         D3D12_RESOURCE_DESC desc{}; desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-        desc.Width=2560; desc.Height=1440; desc.DepthOrArraySize=desc.MipLevels=1;
+        desc.Width=2560; desc.Height=prepare?1444:1440; desc.DepthOrArraySize=desc.MipLevels=1;
         desc.Format=prepare?DXGI_FORMAT_R32G8X24_TYPELESS:DXGI_FORMAT_D32_FLOAT; desc.SampleDesc.Count=1; desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
         D3D12_CLEAR_VALUE clear{}; clear.Format=prepare?DXGI_FORMAT_D32_FLOAT_S8X24_UINT:desc.Format; clear.DepthStencil.Depth=1;
         ComPtr<ID3D12Resource> depth;
@@ -58,11 +58,16 @@ struct DummyDevice {
         D3D12_RESOURCE_BARRIER b{}; b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION; b.Transition.pResource=depth.Get();
         b.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
         b.Transition.StateBefore=D3D12_RESOURCE_STATE_DEPTH_WRITE; b.Transition.StateAfter=D3D12_RESOURCE_STATE_DEPTH_READ;
-        D3D12_RESOURCE_BARRIER batch[2]={b,{}};
-        batch[1].Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION; batch[1].Transition.pResource=unrelated.Get();
-        batch[1].Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        batch[1].Transition.StateBefore=D3D12_RESOURCE_STATE_COMMON; batch[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
-        list->ResourceBarrier(prepare?2:1,batch);
+        D3D12_RESOURCE_BARRIER batch[3]={b,b,{}};
+        if(prepare) {
+            // Depth and stencil are independent planes of the same resource.
+            batch[0].Transition.Subresource=0;
+            batch[1].Transition.Subresource=1;
+            batch[2].Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION; batch[2].Transition.pResource=unrelated.Get();
+            batch[2].Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            batch[2].Transition.StateBefore=D3D12_RESOURCE_STATE_COMMON; batch[2].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+        }
+        list->ResourceBarrier(prepare?3:1,batch);
         std::swap(b.Transition.StateBefore,b.Transition.StateAfter); list->ResourceBarrier(1,&b);
         Check(list->Close(),"Close exercised list"); ID3D12CommandList* lists[]={list.Get()}; queue->ExecuteCommandLists(1,lists);
         ComPtr<ID3D12Fence> fence; Check(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&fence)),"Create test fence");

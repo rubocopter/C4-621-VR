@@ -4,6 +4,7 @@
 #include "window_capture.hpp"
 #include "pose_publisher.hpp"
 #include "capture_health.hpp"
+#include "gpu_window_bridge.hpp"
 #include <winrt/base.h>
 #include <DirectXMath.h>
 #include <array>
@@ -63,19 +64,20 @@ struct Probe {
     XrApi xr;
     std::unique_ptr<GpuUpload> gpu;
     std::unique_ptr<WindowCapture> capture;
+    std::unique_ptr<GpuWindowBridge> gpu_capture;
     std::unique_ptr<PosePublisher> publisher;
     XrSession session=XR_NULL_HANDLE;
     XrSpace local=XR_NULL_HANDLE,view=XR_NULL_HANDLE;
     std::array<XrSwapchain,2> chains{};
     std::array<std::vector<XrSwapchainImageD3D12KHR>,2> images;
     XrSessionState state=XR_SESSION_STATE_UNKNOWN;
-    bool running=false,stop=false;
+    bool running=false,stop=false,tracking_ready=false;
     std::ofstream log;
-    std::uint64_t frames=0,submitted=0,focused=0,captured=0,changed=0,valid_poses=0,capture_losses=0;
+    std::uint64_t frames=0,submitted=0,visible_frames=0,focused=0,captured=0,changed=0,valid_poses=0,capture_losses=0;
     DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;
     std::filesystem::path output;
     void Event(const std::string& row) { log << row << '\n'; log.flush(); std::cout << row << std::endl; }
-    explicit Probe(const std::filesystem::path& path,DWORD pid,bool tracking):output(path) {
+    explicit Probe(const std::filesystem::path& path,DWORD pid,bool tracking,bool gpu_mode):output(path) {
         if(std::filesystem::exists(path)) throw std::runtime_error("Evidence file already exists");
         if(path.has_parent_path()) std::filesystem::create_directories(path.parent_path());
         log.open(path); if(!log) throw std::runtime_error("Cannot create evidence file");
@@ -116,12 +118,16 @@ struct Probe {
             images[eye].assign(count,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
             XCheck(xr.EnumerateSwapchainImages(chains[eye],count,&count,reinterpret_cast<XrSwapchainImageBaseHeader*>(images[eye].data())),"xrEnumerateSwapchainImages");
         }
-        if(pid) capture=std::make_unique<WindowCapture>(pid,gpu->adapter.Get());
+        if(pid && gpu_mode) {
+            winrt::init_apartment(winrt::apartment_type::multi_threaded);
+            gpu_capture=std::make_unique<GpuWindowBridge>(pid,gpu->device.Get(),gpu->queue.Get());
+        } else if(pid) capture=std::make_unique<WindowCapture>(pid,gpu->adapter.Get());
         if(tracking) publisher=std::make_unique<PosePublisher>(pid);
         Event("{\"kind\":\"metadata\",\"runtime\":"+Quote(runtime.runtimeName)+",\"system\":"+Quote(properties.systemName)+
             ",\"graphics\":\"D3D12\",\"mode\":"+Quote(pid?"game_window_quad":"per_eye_pattern_quad")+
             ",\"game_pid\":"+std::to_string(pid)+",\"width\":1280,\"height\":720,\"format\":"+std::to_string(format)+
             ",\"head_locked\":"+std::string(tracking?"true":"false")+",\"headtracking\":"+std::string(tracking?"true":"false")+
+            ",\"capture_transport\":"+Quote(gpu_mode?"gpu_shared_texture":"cpu_readback")+",\"pixel_changes_measured\":"+std::string(gpu_mode?"false":"true")+
             ",\"rotation_limit_degrees\":25,\"pose_coordinate_conversion\":\"reflect_z\",\"game_geometry_stereo\":false}");
     }
     void Poll() {
@@ -145,7 +151,8 @@ struct Probe {
     int Run(double seconds) {
         auto pixels=std::array{Pattern(0),Pattern(1)};
         auto preview=output; preview.replace_extension(L".bmp");
-        if(!capture) SavePreview(preview,pixels[0]);
+        if(!capture && !gpu_capture) SavePreview(preview,pixels[0]);
+        const bool captures_game=bool(capture)||bool(gpu_capture);
         bool centered=false,preview_saved=false;
         bool capture_was_stale=false;
         ULONGLONG last_capture_tick=0;
@@ -188,17 +195,23 @@ struct Probe {
                     if(!preview_saved) { SavePreview(preview,pixels[0]); preview_saved=true; }
                 }
             }
-            const bool fresh=!capture || CaptureFresh(GetTickCount64(),last_capture_tick,captured!=0);
-            if(capture && captured && !fresh && !capture_was_stale) {
+            if(gpu_capture && gpu_capture->Update()) {
+                ++captured; last_capture_tick=GetTickCount64();
+            }
+            const bool fresh=!captures_game || CaptureFresh(GetTickCount64(),last_capture_tick,captured!=0);
+            if(captures_game && captured && !fresh && !capture_was_stale) {
                 ++capture_losses; Event("{\"kind\":\"capture_stale\",\"image_hidden\":true,\"tracking_invalidated\":true}");
             }
-            capture_was_stale=capture && captured && !fresh;
+            capture_was_stale=captures_game && captured && !fresh;
             if(publisher) {
                 XrSpaceLocation pose{XR_TYPE_SPACE_LOCATION};
                 XCheck(xr.LocateSpace(view,local,frame.predictedDisplayTime,&pose),"xrLocateSpace tracking");
                 const auto& q=pose.pose.orientation;
-                const bool valid=fresh && state==XR_SESSION_STATE_FOCUSED && (pose.locationFlags&5)==5;
+                const bool valid=HeadTrackingReady(state==XR_SESSION_STATE_VISIBLE || state==XR_SESSION_STATE_FOCUSED,
+                    frame.shouldRender,fresh,(pose.locationFlags&XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)!=0,
+                    (pose.locationFlags&XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT)!=0);
                 publisher->Update({q.x,q.y,q.z,q.w},valid);
+                tracking_ready=valid;
                 if(valid) ++valid_poses;
             }
             XrCompositionLayerQuad layers[2]={{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}};
@@ -210,7 +223,8 @@ struct Probe {
                     XCheck(xr.AcquireSwapchainImage(chains[eye],&acquire,&index),"xrAcquireSwapchainImage");
                     XrSwapchainImageWaitInfo available{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO}; available.timeout=XR_INFINITE_DURATION;
                     XCheck(xr.WaitSwapchainImage(chains[eye],&available),"xrWaitSwapchainImage");
-                    gpu->Put(images[eye].at(index).texture,pixels[eye],format);
+                    if(gpu_capture) gpu_capture->Blit(images[eye].at(index).texture,format);
+                    else gpu->Put(images[eye].at(index).texture,pixels[eye],format);
                     XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
                     XCheck(xr.ReleaseSwapchainImage(chains[eye],&release),"xrReleaseSwapchainImage");
                     auto& layer=layers[eye]; layer.space=publisher?view:local; layer.eyeVisibility=eye?XR_EYE_VISIBILITY_RIGHT:XR_EYE_VISIBILITY_LEFT;
@@ -226,18 +240,18 @@ struct Probe {
             XrFrameEndInfo end{XR_TYPE_FRAME_END_INFO}; end.displayTime=frame.predictedDisplayTime; end.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
             end.layerCount=visible?2:0; end.layers=visible?bases:nullptr;
             XCheck(xr.EndFrame(session,&end),"xrEndFrame");
-            if(visible) { ++submitted; if(state==XR_SESSION_STATE_FOCUSED) ++focused; }
+            if(visible) { ++submitted; if(state==XR_SESSION_STATE_VISIBLE || state==XR_SESSION_STATE_FOCUSED) ++visible_frames; if(state==XR_SESSION_STATE_FOCUSED) ++focused; }
             if(Clock::now()-last_log>=std::chrono::seconds(1)) {
                 last_log=Clock::now();
-                Event("{\"kind\":\"progress\",\"submitted_frames\":"+std::to_string(submitted)+",\"focused_frames\":"+std::to_string(focused)+",\"captured_frames\":"+std::to_string(captured)+"}");
+                Event("{\"kind\":\"progress\",\"submitted_frames\":"+std::to_string(submitted)+",\"focused_frames\":"+std::to_string(focused)+",\"captured_frames\":"+std::to_string(captured)+",\"valid_published_poses\":"+std::to_string(valid_poses)+",\"tracking_ready\":"+std::string(tracking_ready?"true":"false")+"}");
             }
         }
         if(publisher) publisher->Invalidate();
         ShutdownSession();
         Event("{\"kind\":\"summary\",\"frames\":"+std::to_string(frames)+",\"submitted_frames\":"+std::to_string(submitted)+
-            ",\"focused_frames\":"+std::to_string(focused)+",\"captured_frames\":"+std::to_string(captured)+",\"changed_capture_frames\":"+std::to_string(changed)+
+            ",\"visible_frames\":"+std::to_string(visible_frames)+",\"focused_frames\":"+std::to_string(focused)+",\"captured_frames\":"+std::to_string(captured)+",\"changed_capture_frames\":"+std::to_string(changed)+
             ",\"valid_published_poses\":"+std::to_string(valid_poses)+",\"capture_loss_events\":"+std::to_string(capture_losses)+",\"session_running\":false,\"game_geometry_stereo\":false}");
-        return focused>0 && (!capture || captured>0) && capture_losses==0?0:2;
+        return visible_frames>0 && (!publisher || valid_poses>0) && (!captures_game || captured>0) && capture_losses==0?0:2;
     }
     void ShutdownSession() {
         if(!running) return;
@@ -247,7 +261,7 @@ struct Probe {
         if(running) throw std::runtime_error("Session did not stop within cleanup window");
     }
     ~Probe() {
-        publisher.reset(); capture.reset();
+        publisher.reset(); capture.reset(); gpu_capture.reset();
         for(auto chain:chains) if(chain) xr.DestroySwapchain(chain);
         if(view) xr.DestroySpace(view);
         if(local) xr.DestroySpace(local);
@@ -256,18 +270,20 @@ struct Probe {
 };
 int wmain(int argc,wchar_t** argv) {
     try {
-        double seconds=15; DWORD pid=0; bool tracking=false; std::filesystem::path output;
+        double seconds=15; DWORD pid=0; bool tracking=false,gpu_mode=false; std::filesystem::path output;
         for(int i=1;i<argc;++i) {
             const std::wstring arg=argv[i];
             if(arg==L"--seconds" && i+1<argc) seconds=std::stod(argv[++i]);
             else if(arg==L"--game-pid" && i+1<argc) pid=std::stoul(argv[++i]);
             else if(arg==L"--output" && i+1<argc) output=argv[++i];
             else if(arg==L"--headtracking") tracking=true;
-            else throw std::runtime_error("Usage: --seconds 1..90 --output new.jsonl [--game-pid PID] [--headtracking]");
+            else if(arg==L"--gpu-capture") gpu_mode=true;
+            else throw std::runtime_error("Usage: --seconds 1..90 --output new.jsonl [--game-pid PID] [--headtracking] [--gpu-capture]");
         }
         if(output.empty() || !std::isfinite(seconds) || seconds<1 || seconds>90) throw std::runtime_error("Output and bounded duration required");
         if(tracking && !pid) throw std::runtime_error("Head tracking requires a selected game PID");
-        Probe probe(output,pid,tracking); return probe.Run(seconds);
+        if(gpu_mode && !pid) throw std::runtime_error("GPU capture requires a selected game PID");
+        Probe probe(output,pid,tracking,gpu_mode); return probe.Run(seconds);
     } catch(const winrt::hresult_error& e) { std::cerr << "WinRT: " << winrt::to_string(e.message()) << '\n'; return 1; }
     catch(const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }
