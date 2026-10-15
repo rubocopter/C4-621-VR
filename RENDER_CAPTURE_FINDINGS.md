@@ -2,6 +2,8 @@
 
 Estado del 15-10-2026. Esta etapa repara el trabajo interrumpido y conserva las pruebas anteriores. Imagen y orientación siguen siendo monoscópicas: el mapa de profundidad todavía no se usa para generar vistas estereoscópicas.
 
+**Avance posterior:** ya existe una captura conjunta de color/profundidad en una sola lista privada de GPU. Véase [FRAME_PAIR_FINDINGS.md](FRAME_PAIR_FINDINGS.md). La muestra independiente y sus límites descritos abajo corresponden al primer ensayo de profundidad.
+
 ## Profundidad: bloqueo reproducido y corregido
 
 Los intentos anteriores preparaban el readback pero rechazaban todas las copias, o no elegían ningún recurso. Se encontraron dos problemas en la sonda:
