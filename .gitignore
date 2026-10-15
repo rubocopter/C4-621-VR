@@ -1,0 +1,26 @@
+# Local environments and generated build output
+.venv*/
+**/build/
+**/out/
+__pycache__/
+*.py[cod]
+
+# Local captures, experiment logs and machine-specific evidence
+evidence/
+*.log
+*.jsonl
+
+# Game/mod binaries and third-party reference checkouts are not part of this repository
+mods/
+reference/
+*.dll
+*.exe
+*.obj
+*.pdb
+*.lib
+
+# Local configuration and editor files
+.env
+.env.*
+.vs/
+.vscode/
