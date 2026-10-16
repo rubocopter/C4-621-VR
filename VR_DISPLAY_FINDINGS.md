@@ -4,6 +4,8 @@
 
 **Actualización posterior:** existe una ruta opcional de captura por GPU, una muestra real de profundidad y una corrección para seguir la cabeza en sesiones VISIBLE sin exigir foco de inputs. Estado y pruebas actuales en `RENDER_CAPTURE_FINDINGS.md`. Las cifras y la política FOCUSED descritas abajo corresponden a los primeros ensayos.
 
+**16-10-2026:** una captura fija reproyectada por profundidad ya se presentó con imágenes distintas por ojo en PSVR2. El usuario confirmó volumen sin imagen doble (1607 frames visibles, sesión cerrada). El juego vivo sigue monoscópico. Implementación, comando y límites en [PROJECTION_FINDINGS.md](PROJECTION_FINDINGS.md#prueba-de-escena-fija-en-psvr2).
+
 ## Qué funciona y cómo se comprobó
 
 | Ensayo | Evidencia | Resultado |

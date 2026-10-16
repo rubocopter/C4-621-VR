@@ -1,6 +1,6 @@
 # Proyección observada y reproyección estéreo offline — 16-10-2026
 
-Se ha observado la matriz perspectiva real que devuelve un helper de AC6, reconstruido profundidad en unidades del juego y generado dos vistas distintas de una captura guardada. Existe una referencia NumPy y un diagnóstico D3D12 independiente. **La presentación VR en vivo sigue siendo monoscópica**: estos resultados aún no están conectados al transporte de imagen ni al compositor OpenXR.
+Se ha observado la matriz perspectiva real que devuelve un helper de AC6, reconstruido profundidad en unidades del juego y generado dos vistas distintas de una captura guardada. Existe una referencia NumPy y un diagnóstico D3D12 independiente. El par fijo ya se ha mostrado en OpenXR y el usuario confirmó profundidad sin imagen doble. **La presentación del juego en vivo sigue siendo monoscópica**: aún no hay transporte continuo de pares estéreo.
 
 ## Identidad y método
 
@@ -101,6 +101,22 @@ ctest --test-dir native\stereo_reprojection\build -C Release --output-on-failure
 Omitir `--gpu-exe` para la referencia CPU. Elegir siempre prefijos nuevos. El wrapper genera archivos de entrada binarios privados con firma `AC6RPRJ1`, Params de 48 bytes (`<4I6f2I`: sw/sh/tw/th, fx/fy/A/B/Wsign/eyeX, dos reservas), depth float32 contiguo y color RGBA8. El ejecutable devuelve índices uint32 y color RGBA8, con `0xffffffff` / color cero para huecos. Las máscaras y el JSON permiten inspeccionar cobertura, tiempos y diferencias. Los datos y capturas permanecen en rutas ignoradas por Git.
 
 ## Trabajo pendiente para presentación binocular
+
+### Prueba de escena fija en PSVR2
+
+Se amplió el diagnóstico OpenXR existente con `--stereo-left` y `--stereo-right`, dos raws RGBA8 de 1280×720. El lector exige ambos archivos completos, conserva orden/canales y hace opacos los huecos negros. Las opciones son incompatibles con captura del PID y seguimiento de cámara. Se presentan dos capas quad con visibilidad LEFT/RIGHT, situadas en LOCAL a 2 m, tamaño 2.4×1.35 m. Son una pantalla estereoscópica, sin adaptación a FOV asimétricos del visor ni movimiento de cámara en el juego.
+
+Ensayo `evidence/xr-static-stereo-5440-01.jsonl`: 20 segundos desde VISIBLE; 1608 envíos, 1607 visibles y 1448 enfocados. Sesión cerrada, código 0. El usuario confirmó: **«Se veía con profundidad y sin imagen doble»**. Esto valida percepción de relieve y fusión de esa escena fija; no acredita comodidad prolongada, escala real ni estereoscopía en combate.
+
+La auditoría de entradas y previews verifica RGB exacto por ojo. SHA-256 del ejecutable utilizado: `d12b671e3d2e4fd63d0164cf9f73894cc7181ffd9eb9414b42c187ab60b132a1`. No se cargaron sondas ni se enviaron controles al juego; AC6 seguía respondiendo al finalizar. Tres tests del presentador pasan, incluido el nuevo test de orden, alfa y tamaño del par (fallo inicial observado antes de implementar).
+
+```powershell
+native\xr_display_probe\build\Release\ac6_xr_display_probe.exe --seconds 20 --output evidence\xr-static-stereo-new.jsonl --stereo-left evidence\stereo-gpu-verified-5440-b05-left-gpu.rgba.raw --stereo-right evidence\stereo-gpu-verified-5440-b05-right-gpu.rgba.raw
+```
+
+Ponte el visor y cierra el panel SteamVR antes de empezar. F12 cancela. Hay un margen de 30 segundos para alcanzar VISIBLE; usar un prefijo nuevo para el log y ambos BMP de preview. No requiere que el juego siga abierto. Los raws son la captura privada descrita arriba, no archivos incluidos en el repositorio.
+
+### Integración continua pendiente
 
 Asociar proyección/jitter y cámara al mismo snapshot; establecer metros por unidad; obtener pares continuos por GPU con recursos y fences compartidos sin readback; reproyectar con las poses y FOV asimétricos de cada ojo; tratar HUD/oclusiones y probar visualmente con el usuario. La orientación de cabeza ya confirmada no sustituye esas comprobaciones.
 
