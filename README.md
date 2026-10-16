@@ -21,9 +21,9 @@
 
 A proof of concept has displayed the game in a PS VR2 headset and followed the player's head orientation. The headset view and calibrated horizontal and vertical tracking were confirmed during a hands-on trial.
 
-A GPU texture-sharing capture path has also been tested with the live game, and a D3D12 depth snapshot has been recovered. Depth is not yet used for stereo rendering. See the [render and capture research notes](RENDER_CAPTURE_FINDINGS.md) for verification and limitations.
+A GPU texture-sharing capture path has also been tested with the live game, and a D3D12 depth snapshot has been recovered. Depth is not yet used for live stereo presentation. See the [render and capture research notes](RENDER_CAPTURE_FINDINGS.md) for verification and limitations.
 
-Paired color and depth have now been captured together on the game's graphics queue and visually compared. Projection and metric depth still need calibration before stereo reprojection; see the [paired capture findings](FRAME_PAIR_FINDINGS.md).
+Paired color and depth have been captured together on the game's graphics queue. The observed perspective matrix now allows depth reconstruction in game units, and separate eye views have been generated offline on CPU and D3D12. Metric scale and live binocular presentation remain pending; see the [projection and stereo findings](PROJECTION_FINDINGS.md).
 
 This is an early, limited experiment: the image is monoscopic and head rotation is restricted. It is not a complete VR conversion or a public release.
 

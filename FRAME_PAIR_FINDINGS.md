@@ -60,8 +60,8 @@ Se guardan PNG de color/depth/contornos, una comparación, depth `.npy` sin norm
 
 ## Límites y siguiente etapa
 
-La copia conjunta demuestra una muestra coherente de los dos recursos en ese punto de la cola. No identifica el número de frame interno del motor, ni prueba que no haya más dibujo después del envío elegido o que un efecto use datos temporales. No se han calibrado matriz de proyección, profundidad métrica, jitter, escala del AC/IPD ni colorimetría/HDR.
+La copia conjunta demuestra una muestra coherente de los dos recursos en ese punto de la cola. No identifica el número de frame interno del motor, ni prueba que no haya más dibujo después del envío elegido o que un efecto use datos temporales. Una investigación posterior observó el modelo de proyección y la fórmula de jitter, pero no los asoció al mismo frame de esta captura. Profundidad métrica, escala del AC/IPD y colorimetría/HDR siguen pendientes.
 
-La imagen VR sigue siendo monoscópica. El siguiente paso es obtener/validar la proyección y la transformación de profundidad, medir su alineación con el color y después construir y evaluar vistas por ojo con oclusiones y HUD tratados de forma explícita.
+La imagen VR en vivo sigue siendo monoscópica. Ya se generan vistas separadas offline desde una nueva captura, en CPU y D3D12; resultados, repetición y límites en [PROJECTION_FINDINGS.md](PROJECTION_FINDINGS.md). La integración continua por GPU y las vistas asimétricas de OpenXR son trabajo pendiente.
 
 Referencias primarias: [estados y barreras D3D12](https://learn.microsoft.com/en-us/windows/win32/direct3d12/using-resource-barriers-to-synchronize-resource-states-in-direct3d-12), [ExecuteCommandLists](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12commandqueue-executecommandlists), [grabación, reutilización y referencias](https://learn.microsoft.com/en-us/windows/win32/direct3d12/recording-command-lists-and-bundles), [ResizeBuffers](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-resizebuffers).

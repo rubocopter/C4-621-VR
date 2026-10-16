@@ -1,4 +1,4 @@
-# Armored Core VI — investigación de mod VR (15-10-2026)
+# Armored Core VI — investigación de mod VR (actualizado 16-10-2026)
 
 ## Objetivo
 
@@ -13,7 +13,7 @@ Construir una adaptación VR de *Armored Core VI: Fires of Rubicon* para PSVR2 e
 - OpenXR activo en Windows: `C:\Program Files (x86)\Steam\steamapps\common\SteamVR\steamxr_win64.json`.
 - EAC presente en la instalación estándar. Hay un launcher cooperativo que, según la documentación de su autor, inicia sesiones modificadas sin EAC y sin emparejamiento oficial de FromSoftware. Por tanto, el laboratorio se limitará al launcher cooperativo y juego individual; nunca a las partidas oficiales con EAC.
 - El modo cooperativo usa partidas separadas. La compatibilidad de sus hooks con un futuro módulo VR debe probarse; el launcher por sí solo no implementa un cargador OpenXR.
-- **Última sesión de laboratorio:** launcher cooperativo, misión offline confirmada por el usuario, PID `17628`; identidad y módulos comprobados por el cargador. Los PID `32616` y `4904` corresponden a sesiones anteriores ya cerradas. La presencia de un launcher no verifica por sí sola el estado de red.
+- **Última sesión de laboratorio:** launcher cooperativo, misión offline confirmada por el usuario, PID `5440`; identidad y módulos comprobados por el cargador. Los PID `17628`, `32616` y `4904` corresponden a sesiones anteriores ya cerradas. La presencia de un launcher no verifica por sí sola el estado de red.
 
 ## Mods existentes
 
@@ -43,11 +43,13 @@ Referencias de terceros:
 3. **Puerta C: presentación temporal conseguida.** Aplicación independiente con OpenXR/D3D12 y swapchains de 1280×720 por ojo. La ruta opcional `--gpu-capture` ya transporta la ventana WGC mediante texturas/fences compartidas, sin leer sus píxeles en CPU; diagnóstico medido ~60 capturas/s frente al límite de 30 de la ruta anterior. El usuario confirmó imagen y orientación en el visor. Latencia de movimiento a imagen aún sin medir; sigue siendo una capa quad monoscópica, no una integración directa del renderer ni un mod persistente.
 4. **Puerta D: estereoscopía real.** Generar y mostrar views/projections independientes de ojo izquierdo y derecho, con pose de cabeza e IPD procedentes de OpenXR. Determinar si hace falta repetir el render pass, reutilizar draw calls o implementar una vía de reproyección limitada. Una sola captura monoscópica duplicada en los dos ojos no supera esta puerta.
 
-   Se capturó profundidad D3D12 de 2560×1440 y después un par color/depth en una sola lista privada al final de un envío gráfico. La comparación de contornos es cualitativamente compatible con la escena. Falta verificar proyección, escala métrica, alineación cuantitativa y relación con el frame final antes de generar estereoscopía; detalles en `FRAME_PAIR_FINDINGS.md`.
+   Se capturó un par color/depth en una sola lista privada al final de un envío gráfico. Una sonda posterior observó proyección reverse-Z y jitter; la matriz permite reconstrucción en unidades del juego. Ya hay dos vistas offline, en NumPy y en un ejecutable D3D12 independiente. Falta asociar proyección al mismo frame, escala métrica, proyecciones asimétricas por ojo y transporte binocular vivo. Detalles en `FRAME_PAIR_FINDINGS.md` y `PROJECTION_FINDINGS.md`.
 5. **Puerta E: juego básico.** Seguimiento 6DoF (orientación y posición) estable e independiente del movimiento del AC, sin desalinear armas/objetivos, latencia aceptable y sin perder la cámara en boosts, lock-on o transiciones. Adaptar HUD para lectura cómoda y conservar input de gamepad. El prototipo actual solo aplica orientación (3DoF).
 6. **Puerta F: experiencia VR.** Tratamiento de efectos de postprocesado, oclusión y geometría cercana, comodidad (vibraciones, horizonte, aceleraciones, snap/recenter), y mapeo de mandos PSVR2 Sense si aporta valor.
 
 ## Riesgos técnicos
+
+Actualización de la medición del preset: la matriz observada con el mod activo deriva FOV Y ~89.0000° y FOV X ~120.4260°. La fórmula reverse-Z ya permite reconstruir unidades del juego; no está establecida su equivalencia a metros. La referencia estéreo offline y el diagnóstico GPU se detallan en `PROJECTION_FINDINGS.md`.
 
 - El juego no ofrece API oficial de VR ni integración visible con OpenXR. El mayor riesgo es obtener dos vistas renderizadas por frame a través de su renderer D3D12 propietario.
 - `regulation.bin` es un mod de datos: cambia la cámara y el FOV, pero no garantiza pose de cabeza, profundidad estereoscópica, timings de VR o HUD adecuado.

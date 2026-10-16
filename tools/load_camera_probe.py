@@ -42,7 +42,8 @@ def main():
             raise RuntimeError("Different game build")
     is_tracking = dll_path.name.startswith("ac6_headtracking")
     is_pair = bool(re.fullmatch(r"ac6_frame_pair_probe(?:_v[2-9][0-9]*)?\.dll", dll_path.name))
-    is_render = is_pair or dll_path.name in ("ac6_render_probe.dll", "ac6_depth_capture_probe.dll", "ac6_depth_batch_capture_probe.dll")
+    is_projection = dll_path.name == "ac6_projection_probe.dll"
+    is_render = is_pair or is_projection or dll_path.name in ("ac6_render_probe.dll", "ac6_depth_capture_probe.dll", "ac6_depth_batch_capture_probe.dll")
     prefix = "headtracking_probe" if is_tracking else "camera_probe"
     if dll_path.name == "ac6_headtracking_display_probe.dll":
         prefix = "headtracking_display_probe"
@@ -54,6 +55,8 @@ def main():
         prefix = "depth_capture_probe"
     elif is_pair:
         prefix = dll_path.stem.removeprefix("ac6_")
+    elif is_projection:
+        prefix = "projection_probe"
     elif is_render:
         prefix = "render_probe"
     log_path = dll_path.with_name(f"{prefix}_{args.pid}.jsonl")
@@ -157,6 +160,8 @@ def main():
             report["render_hooks_restored"] = any(r.get("hooks_restored") for r in records if r["phase"] in ("restoration", "disabled"))
         if is_pair:
             report["frame_pair_written"] = any(r.get("written") for r in records if r["phase"] == "frame_pair")
+        if is_projection:
+            report["projection_samples_observed"] = any(r.get("samples", 0) > 0 and r.get("status") == "MH_OK" for r in records if r["phase"] == "disabled")
         if dll_path.name in ("ac6_depth_capture_probe.dll", "ac6_depth_batch_capture_probe.dll"):
             report["depth_capture_written"] = any(r.get("written") for r in records if r["phase"] == "depth_capture")
         if not k.ReadProcessMemory(process, meta["Base"] + 0x6BFE50, buffer, 16, C.byref(count)):
@@ -172,7 +177,7 @@ def main():
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2))
-    return 0 if report.get("auto_disabled") and report.get("prologue_restored") and (not is_render or report.get("render_hooks_restored")) and report.get("depth_capture_written", True) and report.get("frame_pair_written", True) else 2
+    return 0 if report.get("auto_disabled") and report.get("prologue_restored") and (not is_render or report.get("render_hooks_restored")) and report.get("depth_capture_written", True) and report.get("frame_pair_written", True) and report.get("projection_samples_observed", True) else 2
 
 
 if __name__ == "__main__":
