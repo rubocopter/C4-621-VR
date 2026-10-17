@@ -6,6 +6,8 @@
 
 **16-10-2026:** una captura fija reproyectada por profundidad ya se presentó con imágenes distintas por ojo en PSVR2. El usuario confirmó volumen sin imagen doble (1607 frames visibles, sesión cerrada). El juego vivo sigue monoscópico. Implementación, comando y límites en [PROJECTION_FINDINGS.md](PROJECTION_FINDINGS.md#prueba-de-escena-fija-en-psvr2).
 
+**Avance posterior del 16-10-2026:** una secuencia continua color/depth del juego produjo dos vistas cambiantes mediante GPU en un ensayo **solo de monitor**. Su presentación como estéreo vivo en PSVR2 aún no tiene verificación visual; consultar [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) para el gate siguiente.
+
 ## Qué funciona y cómo se comprobó
 
 | Ensayo | Evidencia | Resultado |

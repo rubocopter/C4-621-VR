@@ -1,6 +1,6 @@
 # Proyección observada y reproyección estéreo offline — 16-10-2026
 
-Se ha observado la matriz perspectiva real que devuelve un helper de AC6, reconstruido profundidad en unidades del juego y generado dos vistas distintas de una captura guardada. Existe una referencia NumPy y un diagnóstico D3D12 independiente. El par fijo ya se ha mostrado en OpenXR y el usuario confirmó profundidad sin imagen doble. **La presentación del juego en vivo sigue siendo monoscópica**: aún no hay transporte continuo de pares estéreo.
+Se ha observado la matriz perspectiva real que devuelve un helper de AC6, reconstruido profundidad en unidades del juego y generado dos vistas distintas de una captura guardada. Existe una referencia NumPy y un diagnóstico D3D12 independiente. El par fijo ya se ha mostrado en OpenXR y el usuario confirmó profundidad sin imagen doble. **Actualización 16-10-2026:** el transporte y la reproyección de pares continuos del juego ya se verificaron **en monitor**; la presentación de juego vivo **dentro del visor sigue confirmada solo en monoscópico**. Véase [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md).
 
 ## Identidad y método
 
@@ -116,8 +116,8 @@ native\xr_display_probe\build\Release\ac6_xr_display_probe.exe --seconds 20 --ou
 
 Ponte el visor y cierra el panel SteamVR antes de empezar. F12 cancela. Hay un margen de 30 segundos para alcanzar VISIBLE; usar un prefijo nuevo para el log y ambos BMP de preview. No requiere que el juego siga abierto. Los raws son la captura privada descrita arriba, no archivos incluidos en el repositorio.
 
-### Integración continua pendiente
+### Integración continua: monitor superado, visor pendiente
 
-Asociar proyección/jitter y cámara al mismo snapshot; establecer metros por unidad; obtener pares continuos por GPU con recursos y fences compartidos sin readback; reproyectar con las poses y FOV asimétricos de cada ojo; tratar HUD/oclusiones y probar visualmente con el usuario. La orientación de cabeza ya confirmada no sustituye esas comprobaciones.
+El productor D3D12 ya comparte pares continuos color/depth mediante recursos y fences; otro proceso genera dos ojos en GPU sin readback en la ruta normal. El ensayo de monitor ha superado esta parte técnica (ver `LIVE_STEREO_FINDINGS.md`). Sigue pendiente **mostrar esos ojos en PSVR2 con juego vivo** y obtener la confirmación visual del usuario. Después: asociar proyección/jitter y cámara al mismo snapshot, establecer metros por unidad, reproyectar con poses y FOV asimétricos de cada ojo, tratar HUD/oclusiones y comprobar latencia y comodidad. La orientación de cabeza confirmada previamente no sustituye estas validaciones.
 
 Referencias primarias usadas para la ruta GPU: [InterlockedMin y ausencia de barrera implícita](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/interlockedmin), [barreras UAV y estados D3D12](https://learn.microsoft.com/en-us/windows/win32/direct3d12/using-resource-barriers-to-synchronize-resource-states-in-direct3d-12), [root descriptors y ausencia de comprobación de límites](https://learn.microsoft.com/en-us/windows/win32/direct3d12/root-signatures-overview).

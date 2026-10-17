@@ -42,8 +42,9 @@ def main():
             raise RuntimeError("Different game build")
     is_tracking = dll_path.name.startswith("ac6_headtracking")
     is_pair = bool(re.fullmatch(r"ac6_frame_pair_probe(?:_v[2-9][0-9]*)?\.dll", dll_path.name))
+    is_stream = bool(re.fullmatch(r"ac6_live_pair_probe_v[1-9][0-9]*\.dll", dll_path.name))
     is_projection = dll_path.name == "ac6_projection_probe.dll"
-    is_render = is_pair or is_projection or dll_path.name in ("ac6_render_probe.dll", "ac6_depth_capture_probe.dll", "ac6_depth_batch_capture_probe.dll")
+    is_render = is_stream or is_pair or is_projection or dll_path.name in ("ac6_render_probe.dll", "ac6_depth_capture_probe.dll", "ac6_depth_batch_capture_probe.dll")
     prefix = "headtracking_probe" if is_tracking else "camera_probe"
     if dll_path.name == "ac6_headtracking_display_probe.dll":
         prefix = "headtracking_display_probe"
@@ -53,7 +54,7 @@ def main():
         prefix = "depth_batch_capture_probe"
     elif dll_path.name == "ac6_depth_capture_probe.dll":
         prefix = "depth_capture_probe"
-    elif is_pair:
+    elif is_pair or is_stream:
         prefix = dll_path.stem.removeprefix("ac6_")
     elif is_projection:
         prefix = "projection_probe"
@@ -126,7 +127,7 @@ def main():
             raise RuntimeError(f"Loader thread not completed (wait={wait}); preserve its argument allocation")
         completed = True
         capture_done = False
-        deadline = time.monotonic() + (30 if is_tracking else 14)
+        deadline = time.monotonic() + (75 if is_stream else 30 if is_tracking else 14)
         offset_seen_at = None
         later_done = False
         records = []
@@ -160,6 +161,8 @@ def main():
             report["render_hooks_restored"] = any(r.get("hooks_restored") for r in records if r["phase"] in ("restoration", "disabled"))
         if is_pair:
             report["frame_pair_written"] = any(r.get("written") for r in records if r["phase"] == "frame_pair")
+        if is_stream:
+            report["stream_frames_observed"] = any(r.get("frames", 0)>0 and not r.get("failed", True) for r in records if r["phase"]=="stream_summary")
         if is_projection:
             report["projection_samples_observed"] = any(r.get("samples", 0) > 0 and r.get("status") == "MH_OK" for r in records if r["phase"] == "disabled")
         if dll_path.name in ("ac6_depth_capture_probe.dll", "ac6_depth_batch_capture_probe.dll"):
@@ -167,7 +170,7 @@ def main():
         if not k.ReadProcessMemory(process, meta["Base"] + 0x6BFE50, buffer, 16, C.byref(count)):
             raise C.WinError(C.get_last_error())
         report["prologue_restored"] = buffer.raw == expected
-        report["dll_remains_mapped_inactive"] = (not is_pair or any(r.get("dll_retained_inactive") for r in records if r["phase"] == "disabled"))
+        report["dll_remains_mapped_inactive"] = (not (is_pair or is_stream) or any(r.get("dll_retained_inactive") for r in records if r["phase"] == "disabled"))
     finally:
         if thread:
             k.CloseHandle(thread)
@@ -177,7 +180,7 @@ def main():
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2))
-    return 0 if report.get("auto_disabled") and report.get("prologue_restored") and (not is_render or report.get("render_hooks_restored")) and report.get("depth_capture_written", True) and report.get("frame_pair_written", True) and report.get("projection_samples_observed", True) else 2
+    return 0 if report.get("auto_disabled") and report.get("prologue_restored") and (not is_render or report.get("render_hooks_restored")) and report.get("depth_capture_written", True) and report.get("frame_pair_written", True) and report.get("projection_samples_observed", True) and report.get("stream_frames_observed", True) else 2
 
 
 if __name__ == "__main__":

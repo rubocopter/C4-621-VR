@@ -21,15 +21,17 @@
 
 A proof of concept has displayed the game in a PS VR2 headset and followed the player's head orientation. The headset view and calibrated horizontal and vertical tracking were confirmed during a hands-on trial.
 
-A GPU texture-sharing capture path has also been tested with the live game, and a D3D12 depth snapshot has been recovered. Depth is not yet used for live stereo presentation. See the [render and capture research notes](RENDER_CAPTURE_FINDINGS.md) for verification and limitations.
+A GPU texture-sharing capture path has been tested with the live game, and paired color and depth have been captured on its D3D12 graphics queue. See the [render and capture research notes](RENDER_CAPTURE_FINDINGS.md) for the earlier experiments.
 
-Paired color and depth have been captured together on the game's graphics queue. The observed perspective matrix allows depth reconstruction in game units, and separate eye views have been generated offline on CPU and D3D12. A static stereo scene has now been displayed in PS VR2, with depth and comfortable image fusion confirmed by the user. Metric scale and live binocular presentation remain pending; see the [projection and stereo findings](PROJECTION_FINDINGS.md).
+The observed perspective matrix allows depth reconstruction in game units. Separate eye views were first generated offline on CPU and D3D12; the resulting **static stereo scene was displayed in PS VR2**, where the user confirmed perceived depth without double vision. See the [projection and stereo findings](PROJECTION_FINDINGS.md).
 
-This is an early, limited experiment: live gameplay is still monoscopic and head rotation is restricted. The stereo trial uses a fixed capture. It is not a complete VR conversion or a public release.
+A **continuous GPU color/depth stream** has now also been demonstrated with the running game. In a six-second **monitor-only** trial, the producer published 721 paired frames (dropping 120 without blocking the game), and the independent D3D12 consumer produced 414 stereo updates with distinct left/right images and changing scene content. **Continuous stereo has not yet been tested in the headset.** See the [live stereo findings](LIVE_STEREO_FINDINGS.md).
+
+This remains an early experiment: the confirmed headset gameplay view uses a monoscopic image with restricted head rotation; the confirmed stereo headset trial uses a fixed capture. Metric scale, per-eye OpenXR projections, continuous binocular headset presentation, and combined stereo/head tracking still need validation. It is not a complete VR conversion or a public release.
 
 ## Project
 
-The work is exploring whether Armored Core VI can become a comfortable, stereoscopic PC VR experience. The next major milestone is continuous binocular presentation of the game world.
+The work is exploring whether Armored Core VI can become a comfortable, stereoscopic PC VR experience. The next milestone is a bounded **live stereo headset trial**, followed by validation with head orientation, correct eye projections, and scale.
 
 Follow along as the project develops, and [support the work on Ko-fi](https://ko-fi.com/onitaku) if you would like to help.
 
