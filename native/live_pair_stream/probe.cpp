@@ -6,9 +6,11 @@
 #include <cwchar>
 #ifdef AC6_FRAME_TRACE
 #include "projection_observer.hpp"
-static auto* projection_observer=new frame_trace::ProjectionObserver(false);
 #ifdef AC6_RENDER_CONTEXT_TRACE
+static auto* projection_observer=new frame_trace::ProjectionObserver(false,true);
 static auto* render_context_observer=new frame_trace::RenderContextObserver(false);
+#else
+static auto* projection_observer=new frame_trace::ProjectionObserver(false);
 #endif
 #endif
 extern "C" size_t PairPresentSlot(void),PairExecuteSlot(void),PairBarrierSlot(void),PairResetSlot(void),PairCloseSlot(void),PairResizeSlot(void),PairResize1Slot(void);

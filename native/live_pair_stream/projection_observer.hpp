@@ -26,8 +26,16 @@ class ProjectionObserver {
 public:
     static constexpr std::size_t Capacity = 256;
     static constexpr std::size_t StackDepth = 8;
-    explicit ProjectionObserver(bool initially_observing = true) noexcept
-        : window_(initially_observing ? Window::Observing : Window::Paused) {}
+    explicit ProjectionObserver(bool initially_observing = true
+#ifdef AC6_RENDER_CONTEXT_TRACE
+                                ,bool context_only=false
+#endif
+                                ) noexcept
+        : window_(initially_observing ? Window::Observing : Window::Paused)
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        ,context_only_(context_only)
+#endif
+    {}
     ProjectionObserver(const ProjectionObserver&) = delete;
     ProjectionObserver& operator=(const ProjectionObserver&) = delete;
 
@@ -70,10 +78,14 @@ public:
                 std::uint32_t thread) noexcept {
         Flight flight(*this);
         if (window_.load() != Window::Observing) return false;
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        const auto context=CurrentContextInvocation();
+        if(context_only_&&!context.ordinal) { ++outside_context_skipped_;return false; }
+#endif
         const auto ordinal = calls_.fetch_add(1, std::memory_order_relaxed) + 1;
         return Store(sample, outputId, jitter, beginQpc, endQpc, thread, ordinal
 #ifdef AC6_RENDER_CONTEXT_TRACE
-                     , CurrentContextInvocation()
+                     , context
 #endif
         );
     }
@@ -144,6 +156,10 @@ public:
         }
         LARGE_INTEGER frequency{};
         QueryPerformanceFrequency(&frequency);
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        if(!print("{\"phase\":\"projection_context_window\",\"context_only\":%s,\"outside_context_skipped\":%llu}\n",
+                  context_only_?"true":"false",static_cast<unsigned long long>(outside_context_skipped_.load()))) return false;
+#endif
         return print("{\"phase\":\"projection_summary\",\"frame_associated\":false,"
                      "\"helper_output_only\":true,\"gpu_use_proven\":false,\"target_rva\":\"0x23a7790\","
                      "\"qpc_frequency\":%lld,\"capacity\":%u,\"calls\":%llu,\"invalid\":%llu,\"valid\":%llu,"
@@ -184,6 +200,10 @@ private:
                   "The observation path requires lock-free atomics");
     std::array<Entry, Capacity> entries_{};
     std::atomic<Window> window_;
+#ifdef AC6_RENDER_CONTEXT_TRACE
+    const bool context_only_;
+    std::atomic<std::uint64_t> outside_context_skipped_{0};
+#endif
     std::atomic<std::uint64_t> calls_{0}, invalid_{0}, valid_{0}, in_flight_{0};
     BuildProjection original_ = nullptr;
     void* target_ = nullptr;
@@ -244,9 +264,10 @@ private:
     static void* __fastcall Detour(void* view, void* output, unsigned char jitter) {
         auto& self = *instance_.load(std::memory_order_acquire);
         Flight flight(self); // covers the original AND post-call sampling
-        const bool observe = self.window_.load() == Window::Observing;
+        bool observe = self.window_.load() == Window::Observing;
 #ifdef AC6_RENDER_CONTEXT_TRACE
         const auto context=CurrentContextInvocation(); // identity at helper ENTRY
+        if(observe&&self.context_only_&&!context.ordinal) { ++self.outside_context_skipped_;observe=false; }
 #endif
         std::uint64_t ordinal = 0;
         LARGE_INTEGER begin{}, end{};

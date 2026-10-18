@@ -41,6 +41,26 @@ int main(int argc,char** argv) try {
     Require(output.find("\"cpu_context\":{\"invocation_ordinal\":1")!=std::string::npos,"Immutable helper scope token lost");
     Require(output.find("\"cpu_context\":{\"invocation_ordinal\":0")!=std::string::npos,"Unscoped helper wrongly inherited context");
     Require(output.find("\"frame_associated\":true")==std::string::npos,"CPU scope must never certify captured frame identity");
+    // v20 filled its helper window before the selected CPU context ran. A
+    // context-only window must survive arbitrarily many unscoped helper calls.
+    ProjectionObserver scoped_only(true,true);
+    for(unsigned i=0;i<ProjectionObserver::Capacity+10;++i)
+        Require(!scoped_only.Record(Sample(),0x5678,0,1,2,GetCurrentThreadId()),"Unscoped calls exhausted the context-only window");
+    RenderContextObserver later_context;
+    later_context.Invoke(reinterpret_cast<void*>(0x10),&context,reinterpret_cast<void*>(0x30),
+        [&](void*,void*,void*)->void* {
+            Require(scoped_only.Record(Sample(),0x5678,0,1,2,GetCurrentThreadId()),"Selected context lost its helper capacity");
+            return nullptr;
+        });
+    scoped_only.Stop();
+    FILE* selected_file=nullptr;Require(tmpfile_s(&selected_file)==0&&selected_file,"Cannot open selected output");
+    std::unique_ptr<FILE,decltype(&std::fclose)> selected_close(selected_file,&std::fclose);
+    Require(scoped_only.Write(selected_file)&&std::fflush(selected_file)==0,"Context-only log failed");
+    std::rewind(selected_file);std::string selected;
+    while(const auto size=std::fread(bytes,1,sizeof bytes,selected_file)) selected.append(bytes,size);
+    Require(selected.find("\"samples\":1")!=std::string::npos&&
+            selected.find("\"outside_context_skipped\":266")!=std::string::npos,
+            "Context-only skip accounting or selected publication missing");
     std::cout<<"Projection helper preserved one scoped and one unscoped immutable CPU sample\n";
     return 0;
 } catch(const std::exception& e) { std::cerr<<e.what()<<'\n';return 1; }

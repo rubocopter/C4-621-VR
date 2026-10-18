@@ -1,8 +1,9 @@
 # Del helper de proyección al contexto de render — 18-10-2026
 
 Continuación desde `95467e8`, después de la [observación v18](FRAME_PROJECTION_PROVENANCE.md#verificación-presencial-v18--pid-11284).
-Este incremento se ha probado en host. La sonda nueva todavía no se ha
-ejecutado en AC6 ni se ha probado presentación en PSVR2.
+El incremento se probó primero en host. La pasada posterior v20 se registra
+debajo: activó correctamente la parada por segunda cola y no certifica la
+captura. No se ha probado presentación en PSVR2.
 
 ## Ruta localizada con los callsites de v18
 
@@ -64,8 +65,9 @@ inválido, enmascara temporalmente el padre con identidad cero. Así no hereda
 por error su contexto. Los hilos no comparten identidad activa.
 
 El forwarding probado en host conserva los tres argumentos, retorno del
-original y excepciones C++. El ABI del detour en esta función de AC6 todavía
-no se ha ejercitado dentro del juego; no se presenta como validación dinámica.
+original y excepciones C++. El detour se ejercitó después en v20 dentro del
+juego; sus 64 registros completos no demuestran la semántica de todos los
+argumentos ni equivalencia de comportamiento en todos los estados.
 Los slots reservados por una invocación que lanza excepción
 quedan incompletos y no se leen. El worker detiene ambas admisiones, desactiva
 hooks y vuelca solo payloads publicados release/acquire, sin esperar callbacks.
@@ -104,29 +106,97 @@ captura ni promueve el resultado a `frame_associated:true` o binding GPU.
   al liberarlo publica una sola entrada inmutable completa. El worker no espera.
 - Logs y builds aislados en `out/render-context-20261018/`. DLL nueva
   `diagnostic/Release/ac6_live_pair_probe_v20.dll`. No se han sobrescrito las
-  DLLs v17/v18 ya mapeadas, ni se han instalado hooks en AC6 en esta tanda.
+  DLLs v17/v18 ya mapeadas. La ejecución posterior se registra a continuación.
+
+## Observación presencial v20 — PID 11284
+
+Usuario presente y confirmación expresa: «Sí, listo para los 8 segundos con
+v20». Se verificó identidad/hash, host cooperativo offline, prólogos originales
+y nombre no mapeado antes de cargar la DLL nueva. Sin visor/consumidor ni
+seguimiento. El loader terminó en 2 porque el productor detectó otra cola y
+publicó Failed: **se conserva el rechazo**. Nueve hooks restaurados, DLL
+retenida inactiva y juego respondiendo; no se repitió la carga.
+
+| Observación | Resultado |
+| --- | --- |
+| Captura | 3 pares y 310 descartes antes del fallo; traza sin overflow ni pares omitidos |
+| Colas | DIRECT: 8774 envíos; segunda cola COPY: un envío/lista, no fiable para el ledger; mismo dispositivo |
+| Contexto CPU | 64 invocaciones completas, cero inválidas/incompletas/overflow; vtable RVA `0x4098e38`, slot1 `0x2b9d140`, slot5 `0x2b9db10` |
+| Helper | 256 muestras, todas fuera del scope seleccionado; cero muestras con identidad CPU resuelta |
+| Analizador | `capture_provenance_complete:false`, `producer_failure`; `scoped_projection_candidates:0`, `frame_associated:false` |
+
+`cpu_context_scope_complete:true` en este log solo significa que los registros
+de scope son completos y las muestras exteriores están declaradas como tales;
+**no** acredita que haya una muestra dentro del contexto. El contador cero es
+explícito. No se relaja la parada por COPY aunque esa lista no muestre
+transiciones de los recursos seguidos; su ausencia no demuestra que no acceda
+a ellos. La causa de la segunda cola sigue sin aislarse.
+
+Evidencia privada: `evidence/render-context-v20-11284-loader.json`,
+`evidence/render-context-v20-11284-analysis.json`,
+`evidence/render-context-v20-11284-observation.json`, y
+`out/render-context-20261018/diagnostic/Release/live_pair_probe_v20_11284.jsonl`.
+SHA-256 DLL: `f84ff46582f2d0083387a59dfc1c51ea8555e90c441b2cb52f4742fc482aa75d`.
+SHA-256 JSONL: `8f0298c95a7ec0199be45cecf3ef04ec2f114627b937a0b8e165fc2f59d44a61`.
+
+### Destinos concretos y siguiente límite de vida
+
+El análisis estático de los candidatos recogidos establece:
+
+- `0x2b9db10..0x2b9db21` devuelve el puntero en contexto `+8`.
+- `0x2b9d140..0x2b9d1c9` comprueba ese puntero; si existe, llama a
+  `0x2b9e420`, que escribe el contexto en paquete `+8`. Después obtiene un
+  objeto padre en contexto `-0x80`, una interfaz en padre `+0x60` y reenvía el
+  paquete a su vtable slot8. Es un adaptador CPU: **no es un binding GPU**.
+- La dirección de esa interfaz/destino posterior no está en los registros
+  de v20. Una lectura posterior de ocho contextos registrados ya no conservó
+  una identidad verificable, por lo que se rechazaron; no se siguieron como
+  si fueran objetos vivos de la misma invocación. Evidencia privada en
+  `evidence/render-context-v20-11284-passive-targets.json`.
+
+Para seguir el forwarding haría falta recoger esa identidad mientras la
+invocación está activa, con comprobación de tipo/layout. Los punteros del
+contexto no se pueden reconstruir desde una muestra posterior cercana.
+
+### Cobertura del helper corregida en host
+
+v20 llenó su ventana del helper antes de entrar en el contexto elegido. En el
+modo opcional de contexto, el productor nuevo construye
+`ProjectionObserver(false,true)`: solo las llamadas con token TLS no cero
+consumen slots. Las exteriores se cuentan en `projection_context_window` /
+`outside_context_skipped`; el flag `context_only` hace explícito ese filtro.
+No filtra por FOV, matriz o coincidencia temporal. Las rutas predeterminadas y
+la sonda de proyección sin contexto conservan su admisión anterior.
+
+Fixture nuevo: 266 llamadas exteriores no consumen la capacidad; una llamada
+dentro del scope conserva su token y publica una muestra. RED de API ausente
+en `scoped-window-red.log`, GREEN de siete CTests en build nuevo
+`out/render-context-20261018/scoped` / DLL v22. Este build **no se ha cargado**.
+Los binarios v17/v18/v20 mapeados permanecen intactos e inactivos.
 
 ## Única observación mínima pendiente
 
-Requiere presencia del usuario y confirmación actual de misión cooperativa
-offline. Ocho segundos sin visor/consumidor/seguimiento, girando suavemente
+Después de la parada por segunda cola, requiere una sesión/PID nuevos,
+presencia del usuario y confirmación actual de misión cooperativa offline.
+Ocho segundos sin visor/consumidor/seguimiento, girando suavemente
 con mando. El loader debe volver a comprobar ejecutable/hash, módulos y nombre
 de DLL nuevo/no mapeado. No recargar v17/v18, no usar matchmaking y no iniciar
 AC6/SteamVR automáticamente. Si cambia la identidad, se rechaza el ensayo.
 
-Usar la DLL v20 recién construida, solo tras la confirmación presencial:
+Usar la DLL v22 recién construida, solo tras la confirmación presencial:
 
 ```powershell
-.venv-analysis/Scripts/python.exe -B tools/load_camera_probe.py --pid <PID-ACTUAL> --single-player-confirmed --dll out/render-context-20261018/diagnostic/Release/ac6_live_pair_probe_v20.dll --no-screenshots --capture evidence/context-new-unused.png --output evidence/context-new-loader.json
-.venv-analysis/Scripts/python.exe -B tools/analyze_frame_trace.py --log out/render-context-20261018/diagnostic/Release/live_pair_probe_v20_<PID-ACTUAL>.jsonl --output evidence/context-new-analysis.json
+.venv-analysis/Scripts/python.exe -B tools/load_camera_probe.py --pid <PID-NUEVO> --single-player-confirmed --dll out/render-context-20261018/scoped/Release/ac6_live_pair_probe_v22.dll --no-screenshots --capture evidence/context-new-unused.png --output evidence/context-new-loader.json
+.venv-analysis/Scripts/python.exe -B tools/analyze_frame_trace.py --log out/render-context-20261018/scoped/Release/live_pair_probe_v22_<PID-NUEVO>.jsonl --output evidence/context-new-analysis.json
 ```
 
 Éxito: captura normal, nueve hooks restaurados, juego respondiendo; registros
 de contexto completos, al menos una muestra del helper con token CPU resuelto
 y destinos de vtable no nulos. Conservar JSON del loader, JSONL completo y
-análisis, incluso ante rechazo. Si el límite de 256 muestras del helper se
-alcanza sin entrar en este contexto, el resultado será ausencia de cobertura;
-no se sustituyen muestras por matrices cercanas ni se declara asociación.
+análisis, incluso ante rechazo. Si no se obtiene ninguna llamada del helper
+dentro del contexto, el resultado será ausencia de cobertura; no se sustituyen
+muestras por matrices cercanas ni se declara asociación. Si reaparece otra
+cola, detener sin repetir cargas ni eliminar el gate.
 
 La observación permitiría inspeccionar la implementación virtual concreta para
 seguir el upload/binding. Seguirían pendientes el rango/versión de bytes usados
