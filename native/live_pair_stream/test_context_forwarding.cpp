@@ -47,25 +47,31 @@ static std::string Log(RenderContextObserver& observer) {
 static void CachedImageBoundsRejectWritableOrIncompatibleSections() {
     // Reserve the pinned RVA extent, commit only synthetic PE headers. No code
     // is mapped or executed; the production setup reader only needs headers.
-    auto* image=static_cast<unsigned char*>(VirtualAlloc(nullptr,0x4200000,MEM_RESERVE,PAGE_NOACCESS));
+    auto* image=static_cast<unsigned char*>(VirtualAlloc(nullptr,0x4500000,MEM_RESERVE,PAGE_NOACCESS));
     Require(image!=nullptr,"Cannot reserve synthetic image");
     struct FreeImage { void* image;~FreeImage(){VirtualFree(image,0,MEM_RELEASE);} } free_image{image};
     Require(VirtualAlloc(image,4096,MEM_COMMIT,PAGE_READWRITE)!=nullptr,"Cannot commit synthetic headers");
     auto* dos=reinterpret_cast<IMAGE_DOS_HEADER*>(image);dos->e_magic=IMAGE_DOS_SIGNATURE;dos->e_lfanew=128;
     auto* nt=reinterpret_cast<IMAGE_NT_HEADERS64*>(image+128);nt->Signature=IMAGE_NT_SIGNATURE;
-    nt->FileHeader.Machine=IMAGE_FILE_MACHINE_AMD64;nt->FileHeader.NumberOfSections=2;
+    nt->FileHeader.Machine=IMAGE_FILE_MACHINE_AMD64;nt->FileHeader.NumberOfSections=3;
     nt->FileHeader.SizeOfOptionalHeader=sizeof(IMAGE_OPTIONAL_HEADER64);
-    nt->OptionalHeader.Magic=IMAGE_NT_OPTIONAL_HDR64_MAGIC;nt->OptionalHeader.SizeOfImage=0x4200000;
+    nt->OptionalHeader.Magic=IMAGE_NT_OPTIONAL_HDR64_MAGIC;nt->OptionalHeader.SizeOfImage=0x4500000;
     auto* sections=IMAGE_FIRST_SECTION(nt);
     std::memcpy(sections[0].Name,".text",6);sections[0].VirtualAddress=0x1000;
     sections[0].Misc.VirtualSize=0x3fff000;sections[0].Characteristics=IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_EXECUTE;
     std::memcpy(sections[1].Name,".rdata",7);sections[1].VirtualAddress=0x4000000;
     sections[1].Misc.VirtualSize=0x200000;sections[1].Characteristics=IMAGE_SCN_MEM_READ;
+    // The real pinned executable has a second .text after .idata. A later
+    // same-named section must not discard the known adapter's code range.
+    std::memcpy(sections[2].Name,".text",6);sections[2].VirtualAddress=0x4300000;
+    sections[2].Misc.VirtualSize=0x100000;sections[2].Characteristics=IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_EXECUTE;
     ContextForwardingLayout layout;
     Require(LoadGameForwardingLayout(reinterpret_cast<HMODULE>(image),layout)&&layout.Enabled(),"Compatible image bounds rejected");
     const auto base=reinterpret_cast<std::uintptr_t>(image);
     Require(layout.adapter_vtable==base+0x4098e38&&layout.adapter_slot1==base+0x2b9d140&&
             layout.adapter_slot5==base+0x2b9db10,"Pinned adapter RVAs changed");
+    Require(layout.ContainsCode(base+0x4300000)&&!layout.ContainsCode(base+0x4200000),
+            "Secondary code section discarded or non-executable gap admitted");
     sections[1].Characteristics|=IMAGE_SCN_MEM_WRITE;
     Require(!LoadGameForwardingLayout(reinterpret_cast<HMODULE>(image),layout),"Writable vtable range accepted");
     sections[1].Characteristics=IMAGE_SCN_MEM_READ;sections[0].Characteristics|=IMAGE_SCN_MEM_WRITE;

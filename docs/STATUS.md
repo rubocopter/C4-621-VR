@@ -116,7 +116,9 @@ pruebas con GPU local**.
    procedencia completa, una cola y nueve hooks restaurados. Es identidad
    de scope CPU, sin asociación de la matriz con esos pares.
    El siguiente forwarding virtual y su uso por GPU siguen sin observarse;
-   v24 prepara su lectura acotada al entrar, opcional y probada solo en host.
+   v24 se rechazó antes de habilitar hooks por dos secciones PE `.text`.
+   v26 corrige ese caso con RED/GREEN host y prepara la lectura acotada;
+   no se ha observado todavía la interfaz hija.
 2. **Geometría del visor y escala:** integrar poses/FOV por ojo, establecer
    unidades/IPD y presentación adecuada; validar físicamente antes de cambiar
    la ruta por defecto. La preparación host no acredita esas capacidades.

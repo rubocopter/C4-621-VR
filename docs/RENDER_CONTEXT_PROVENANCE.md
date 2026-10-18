@@ -261,7 +261,7 @@ Siguen pendientes el rango/versión de bytes usados por GPU, el draw que
 escribe el depth capturado, viewport y la correspondencia con TAA/color final.
 Esta sonda no supera por sí sola el gate de proyección.
 
-## Forwarding al entrar en el adaptador — incremento host v24
+## Forwarding al entrar en el adaptador — incremento v24/v26
 
 `AC6_CONTEXT_FORWARD_TRACE=OFF` por defecto; requiere ambas opciones anteriores
 ON. Reutiliza el hook de `0x26e17f0`: sigue habiendo nueve hooks y la ventana de
@@ -271,7 +271,9 @@ propiedad del ring, frescura, calibración ni presentación VR.
 El lector nuevo `context_forwarding_trace.hpp` solo sigue el layout observado
 para vtable RVA `0x4098e38`, slot1 `0x2b9d140` y slot5 `0x2b9db10`. Al crear el
 hook, antes de habilitarlo, valida los límites PE `.rdata` de solo lectura y
-`.text` ejecutable sin escritura y cachea esos rangos. En el callback:
+`.text` ejecutable sin escritura y cachea esos rangos. La corrección v26
+conserva las secciones `.text` múltiples como rangos separados, sin convertir
+sus huecos en código ejecutable. En el callback:
 
 1. Comprueba identidad exacta del adaptador/token y vuelve a leer su vtable y
    slots antes de seguir el layout. Otros tipos se registran como rechazo.
@@ -320,14 +322,60 @@ la procedencia de captura, por lo que hay que leer también estos resultados.
 - Build nuevo en `out/context-forwarding-20261018/diagnostic/Release/`, DLL
   `ac6_live_pair_probe_v24.dll`. SHA-256:
   `27068ec3bf117051d891fca6b10979ebb0d4b4f92a1cc4a750b0b1260953a6b6`.
-  No cargada en AC6 al registrar esta verificación. Las DLLs anteriores se
+  No se había cargado al registrar la primera verificación host. El intento
+  posterior y su rechazo se conservan a continuación. Las DLLs anteriores se
   mantienen intactas; build predeterminado aislado con nombre v25.
+
+### Rechazo de preparación v24 — PID 3228
+
+Usuario presente y confirmación expresa: «Sí, listo para los 8 segundos con
+v24». El loader verificó identidad/cooperativo, nombre nuevo y prólogo de cámara.
+Terminó con código 2: `Render context fingerprint/hook rejected`. No hubo evento
+`observing`, captura, ni muestras del helper/contexto. La ruta de fallo se
+alcanzó antes de `MH_EnableHook`: el hook de proyección solo se había creado
+deshabilitado; los siete hooks D3D12 aún no se habían creado. No se repitió v24.
+
+El registro nativo dice `hooks_restored:false`: en ese punto no se han tomado
+los baselines D3D12, y `HookRestored` del contexto no acredita un hook que no
+llegó a crearse. Se conserva ese rechazo, sin convertirlo en restauración
+verificada de nueve hooks. La comprobación externa **de solo lectura** verificó
+por separado los prólogos originales de cámara, proyección y contexto, además
+de cabeceras PE vivas iguales a disco. Juego respondiendo; DLL retenida inactiva.
+
+La causa se reprodujo en host: el ejecutable fijado contiene dos `.text`
+(`0x1000..0x3703c00` y `0x53cb000..0x6c2fc00`, extremos exclusivos). El lector
+retenía solo la última, que no contiene los destinos conocidos del adaptador,
+y rechazaba el layout. El fixture inicial solo tenía una; añadir la segunda
+reprodujo RED conductual: `Compatible image bounds rejected` en
+`duplicate-text-red.log`. La corrección conserva hasta 96 rangos acotados y
+elige como rango principal el que contiene ambos destinos conocidos. El test
+exige también admitir código de la segunda sección y rechazar el hueco.
+
+Evidencia privada: `evidence/context-forwarding-v24-3228-loader.json`,
+`evidence/context-forwarding-v24-3228-analysis.json`,
+`evidence/context-forwarding-v24-3228-startup-verification.json` y
+`out/context-forwarding-20261018/diagnostic/Release/live_pair_probe_v24_3228.jsonl`.
+SHA-256 JSONL: `81c4f84d825806a87f04ad655757e4b10d33edff38596442b5e6eb1c56619572`.
+El analizador rechaza la captura y declara el forwarding no observado.
+
+### Corrección host v26
+
+Build aislado `out/context-forwarding-20261018/corrected/Release/`, DLL
+`ac6_live_pair_probe_v26.dll`, SHA-256
+`ce1c2a82fc951919fc8ae7c202276ccc9754e557d8334d2eb14c0b1d8f16e40f`.
+No se ha cargado al registrar esta corrección. v24 mapeada no se recompila ni
+sobrescribe. Ocho CTests correctos con las tres opciones ON, incluido el RED
+anterior ahora GREEN, y ocho OFF en build predeterminado nuevo con nombre v27.
+La revisión independiente de la corrección no encontró problemas. El log de
+fallo añade `hook_activation_attempted` y `hook_baselines_captured` para
+distinguir rechazo de preparación de fallo después de activar. No cambia la
+creación/desactivación ni relaja la comprobación conservadora de restauración.
 
 ### Única observación mínima pendiente
 
 Tras comprobación actual de presencia y misión cooperativa offline: una
-ventana de ocho segundos con v24, sin visor/consumidor/seguimiento. La sesión
-v22 terminó normalmente, por lo que su PID puede reutilizarse si identidad,
+ventana de ocho segundos con v26, sin visor/consumidor/seguimiento. v24 se
+rechazó antes de habilitar hooks, por lo que su PID puede reutilizarse si identidad,
 prólogos y DLL nueva no mapeada pasan de nuevo el loader. Si hay un fallo o
 segunda cola, detener y conservar evidencia, sin recargar ni relajar gates.
 

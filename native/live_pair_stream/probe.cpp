@@ -103,6 +103,7 @@ int RunLivePairProbe(bool self_test,bool gate_test=false) {
     const auto name=L"Local\\AC6PairStream_"+stem+L"_"+std::to_wstring(GetCurrentProcessId());
     std::array<void*,7> targets{}; std::array<std::array<unsigned char,16>,7> before{};
     bool activation_attempted=false;
+    bool ever_activation_attempted=false,hook_baselines_captured=false;
     try {
         if(!self_test&&(!GetModuleHandleW(L"armoredcore6.exe")||!GetModuleHandleW(L"ac6_coop.dll")||GetModuleHandleW(L"EasyAntiCheat_EOS.dll")||GetModuleHandleW(L"EasyAntiCheat.dll"))) throw std::runtime_error("Host rejected");
         PairFixture fixture;
@@ -119,8 +120,9 @@ int RunLivePairProbe(bool self_test,bool gate_test=false) {
         const std::array<void*,7> detours={reinterpret_cast<void*>(&Present),reinterpret_cast<void*>(&Execute),reinterpret_cast<void*>(&Barrier),reinterpret_cast<void*>(&Reset),reinterpret_cast<void*>(&Close),reinterpret_cast<void*>(&Resize),reinterpret_cast<void*>(&Resize1)};
         const std::array<void**,7> originals={reinterpret_cast<void**>(&original_present),reinterpret_cast<void**>(&original_execute),reinterpret_cast<void**>(&original_barrier),reinterpret_cast<void**>(&original_reset),reinterpret_cast<void**>(&original_close),reinterpret_cast<void**>(&original_resize),reinterpret_cast<void**>(&original_resize1)};
         for(unsigned i=0;i<7;++i) std::memcpy(before[i].data(),targets[i],16);
+        hook_baselines_captured=true;
         for(unsigned i=0;i<7;++i) { status=MH_CreateHook(targets[i],detours[i],originals[i]); if(status!=MH_OK) throw std::runtime_error(MH_StatusToString(status)); }
-        activation_attempted=true; status=MH_EnableHook(MH_ALL_HOOKS); if(status!=MH_OK) throw std::runtime_error(MH_StatusToString(status));
+        activation_attempted=true; ever_activation_attempted=true; status=MH_EnableHook(MH_ALL_HOOKS); if(status!=MH_OK) throw std::runtime_error(MH_StatusToString(status));
         constexpr unsigned bounded_seconds=
 #ifdef AC6_FRAME_TRACE
             8;
@@ -209,7 +211,7 @@ int RunLivePairProbe(bool self_test,bool gate_test=false) {
         restored=restored&&(self_test||render_context_observer->HookRestored());
 #endif
 #endif
-        std::fprintf(log,"{\"phase\":\"failed\",\"message\":\"%s\"}\n",error.what());
+        std::fprintf(log,"{\"phase\":\"failed\",\"message\":\"%s\",\"hook_activation_attempted\":%s,\"hook_baselines_captured\":%s}\n",error.what(),ever_activation_attempted?"true":"false",hook_baselines_captured?"true":"false");
         std::fprintf(log,"{\"phase\":\"disabled\",\"hooks_restored\":%s,\"dll_retained_inactive\":true}\n",restored?"true":"false");std::fclose(log);return 1;
     }
 }

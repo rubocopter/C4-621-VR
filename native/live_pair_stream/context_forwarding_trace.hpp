@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <array>
 
 namespace frame_trace {
 struct ForwardingAddressRange {
@@ -15,7 +16,16 @@ struct ForwardingAddressRange {
 struct ContextForwardingLayout {
     std::uintptr_t adapter_vtable=0,adapter_slot1=0,adapter_slot5=0;
     ForwardingAddressRange tables{},code{};
+    std::array<ForwardingAddressRange,96> code_sections{};
+    unsigned code_section_count=0;
     bool Enabled() const noexcept { return adapter_vtable!=0; }
+    bool ContainsCode(std::uintptr_t address) const noexcept {
+        if(code_section_count>code_sections.size()) return false;
+        if(code.Contains(address,1)) return true;
+        for(unsigned i=0;i<code_section_count;++i)
+            if(code_sections[i].Contains(address,1)) return true;
+        return false;
+    }
 };
 enum class ForwardingStatus { NotConfigured, Candidate, AdapterMismatch, NullPayload,
                               NullChild, InvalidChildVtable, InvalidTarget, Unreadable };
@@ -47,7 +57,7 @@ ContextForwardingSnapshot ReadContextForwarding(const Identity& token,const Cont
     if(token.context<0x80||token.context%8||token.vtable!=layout.adapter_vtable||
        token.slot1_target!=layout.adapter_slot1||token.slot5_target!=layout.adapter_slot5||
        !layout.tables.Contains(token.vtable,6*sizeof(std::uintptr_t))||
-       !layout.code.Contains(token.slot1_target,1)||!layout.code.Contains(token.slot5_target,1)) return result;
+       !layout.ContainsCode(token.slot1_target)||!layout.ContainsCode(token.slot5_target)) return result;
     __try {
         // Revalidate the observed type before following its pinned layout.
         if(*reinterpret_cast<const std::uintptr_t*>(token.context)!=layout.adapter_vtable) return result;
@@ -65,7 +75,7 @@ ContextForwardingSnapshot ReadContextForwarding(const Identity& token,const Cont
         if(table%8||!layout.tables.Contains(table,9*sizeof(std::uintptr_t))) return result;
         const auto target=reinterpret_cast<const std::uintptr_t*>(table)[8];
         result.status=ForwardingStatus::InvalidTarget;
-        if(!layout.code.Contains(target,1)) return result;
+        if(!layout.ContainsCode(target)) return result;
         result={ForwardingStatus::Candidate,parent,payload,child,table,target};
         return result;
     } __except(EXCEPTION_EXECUTE_HANDLER) { result.status=ForwardingStatus::Unreadable;return result; }
@@ -83,6 +93,9 @@ inline bool LoadGameForwardingLayout(HMODULE module,ContextForwardingLayout& res
            nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC||!nt->FileHeader.NumberOfSections||
            nt->FileHeader.NumberOfSections>96) return false;
         ContextForwardingLayout layout;
+        layout.adapter_vtable=base+0x4098e38;
+        layout.adapter_slot1=base+0x2b9d140;
+        layout.adapter_slot5=base+0x2b9db10;
         const auto size=nt->OptionalHeader.SizeOfImage;
         const auto* section=IMAGE_FIRST_SECTION(nt);
         for(unsigned i=0;i<nt->FileHeader.NumberOfSections;++i) {
@@ -90,14 +103,16 @@ inline bool LoadGameForwardingLayout(HMODULE module,ContextForwardingLayout& res
             if(!bytes||rva>=size||bytes>size-rva) return false;
             if(std::memcmp(section[i].Name,".rdata\0\0",8)==0&&
                (section[i].Characteristics&IMAGE_SCN_MEM_READ)&&!(section[i].Characteristics&(IMAGE_SCN_MEM_WRITE|IMAGE_SCN_MEM_EXECUTE)))
-                layout.tables={base+rva,base+rva+bytes};
+                if(ForwardingAddressRange{base+rva,base+rva+bytes}.Contains(layout.adapter_vtable,6*sizeof(std::uintptr_t)))
+                    layout.tables={base+rva,base+rva+bytes};
             if(std::memcmp(section[i].Name,".text\0\0\0",8)==0&&
                (section[i].Characteristics&IMAGE_SCN_MEM_EXECUTE)&&!(section[i].Characteristics&IMAGE_SCN_MEM_WRITE))
-                layout.code={base+rva,base+rva+bytes};
+            {
+                const ForwardingAddressRange range{base+rva,base+rva+bytes};
+                layout.code_sections[layout.code_section_count++]=range;
+                if(range.Contains(layout.adapter_slot1,1)&&range.Contains(layout.adapter_slot5,1)) layout.code=range;
+            }
         }
-        layout.adapter_vtable=base+0x4098e38;
-        layout.adapter_slot1=base+0x2b9d140;
-        layout.adapter_slot5=base+0x2b9db10;
         if(!layout.tables.Contains(layout.adapter_vtable,6*sizeof(std::uintptr_t))||
            !layout.code.Contains(layout.adapter_slot1,1)||!layout.code.Contains(layout.adapter_slot5,1)) return false;
         result=layout;return true;
