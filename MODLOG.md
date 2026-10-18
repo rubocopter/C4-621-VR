@@ -281,3 +281,19 @@ La primera persona ya está probada por el usuario y Depth of Field ya está des
   test GPU offline omitido explícitamente. Detalles en el contrato de intrínsecos.
 - Shader, rutas de producción, protocolos y defaults intactos. Sin AC6,
   SteamVR, OpenXR ni ensayo físico; no se declara una mejora visual.
+
+## 2026-10-18 — frescura del par después de las dos copias
+
+- Base `0202774`, rama `codex/stereo-submit-freshness-20261018`. RED reproducido
+  con reloj simulado: comprobación previa correcta, copia derecha exitosa y
+  edad501 antes del envío; el helper anterior enviaba ambas capas caducadas.
+- Se exige validación final tras liberar ambos ojos. El presentador live-pair
+  comprueba mismo ID, estado/layout y edad500 inclusiva mediante la nueva
+  consulta `HasFreshFrame`, también reutilizada por `TryBlit`. Un rechazo cierra
+  con cero capas e invalida la pose, usando contadores/eventos existentes.
+- GREEN: cinco CTests XR host y doce live con GPU, incluidas fronteras500/501,
+  excepciones y fuente Failed. Revisión independiente sin hallazgos. Comandos
+  y límites en `LIVE_STEREO_FINDINGS.md`; builds/logs nuevos bajo `out/`.
+- No cambia el shader, protocolo, fences, gates de cola, baseline, resolución
+  ni orientación. No se ejecutó AC6/SteamVR/OpenXR. La edad se comprueba en CPU
+  antes de EndFrame; no garantiza la edad física del contenido en el visor.
