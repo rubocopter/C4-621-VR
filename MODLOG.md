@@ -221,3 +221,27 @@ La primera persona ya está probada por el usuario y Depth of Field ya está des
   que SM5 puede llevar a cero. Regresión host RED, restricción de coeficientes
   y distancias a valores normales (salvo polo infinito), y verificación de las
   rutas afectadas. Perfil histórico intacto.
+
+## 2026-10-18 — después de validar PR #4: intrínsecos por ojo, solo host
+
+- Tras autorización del usuario se probó `8b8ee37` en PSVR2/PID6796, misión
+  offline, perfil2560×1440/90°. Tres procesos código0, hooks restaurados y
+  valoración del usuario correcta. La evidencia y sus límites se registran en
+  `PROJECTION_FINDINGS.md`; el PR #4 permanece abierto y sin modificaciones.
+- Se continúa en `codex/eye-projection-20261018`, con calibración opcional de
+  intrínsecos fuente/destino por ojo conectada al consumidor GPU y referencia
+  NumPy. Modo desactivado por defecto y sin selector XR ni protocolo nuevo.
+- Regresión GPU observada antes del cambio: píxel2664/frame3/ojo0 discrepante
+  con reconstrucción independiente. Se añade transformación de rayos con
+  validación de procedencia/ejes/rango float32 y rama identidad conservadora.
+  Detalles, pruebas y límites en `docs/EYE_PROJECTION_CONTRACT.md`.
+- Revisión: se añadió rechazo explícito de Y no finita antes de convertir a
+  índice. RED observado en GPU con helper IEEE estricto/sin optimización;
+  el fixture de reproducción usa exclusivamente una dirección de salida fija.
+- Se aísla también la compilación del modo opcional: reflexión DXBC RED→GREEN
+  verifica ausencia de lecturas de sus constantes en el shader por defecto.
+  Se conserva el límite de frescura de 500 ms; una pasada de tests 1080p/1440p
+  caducó durante la verificación y se conserva el fallo en los logs locales.
+- Cierre local: 33 pruebas Python, 16 CTests pertinentes y compilación del
+  consumidor, offline y presentador correctos. La última suite completa del
+  consumidor pasa los diez tests. No se ejecutó otro ensayo en el juego/visor.

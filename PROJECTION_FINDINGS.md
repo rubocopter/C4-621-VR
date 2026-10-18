@@ -238,6 +238,28 @@ un borde cercano y un fondo lejano, y confirmar profundidad fusionable sin
 duplicación ni congelación. Requiere preparación habitual y DLLs nuevas/no
 mapeadas; no se ha realizado durante esta sesión.
 
+## Validación física posterior del PR #4 — 18-10-2026
+
+Después de la tanda host se ejecutó `8b8ee37` en PSVR2, con autorización expresa,
+misión offline confirmada y nuevo PID 6796. Perfil 2560×1440/90°, 27 s visibles
+y 15 s de seguimiento. Se usaron copias aisladas y sondas v12/v5 nuevas; ningún
+archivo de código ni binario de ensayos anteriores se sobrescribió.
+
+820 envíos visibles, 731 enfocados, 798 actualizaciones, cero pérdidas/fuentes
+descartadas; productor 1858 pares, una cola, sin fallo/ledger inseguro. Cámara:
+1591 aplicaciones y cero excepciones. Los tres procesos terminaron en código 0,
+hooks/prólogo restaurados, DLLs retenidas inactivas y juego respondiendo. El
+usuario confirmó «Sí, todo correcto durante la prueba» a escena viva, profundidad
+fusionable sin duplicación/congelación y giro de cabeza correcto.
+
+La aceptación es acotada. Intervalo CPU medio 33.318775 ms, p95 55.6757 ms y
+máximo 359.2362 ms, con esperas; no acredita mejora de rendimiento/latencia ni
+comodidad prolongada. Evidencia privada en
+`out/psvr2-pr4-6796-v12/evidence/pr4-1440p90-v12-6796-physical-acceptance.json`.
+
+Continuación independiente, aún solo host: [intrínsecos distintos por ojo](docs/EYE_PROJECTION_CONTRACT.md).
+La aceptación física anterior corresponde al PR #4 y no al modo nuevo.
+
 ## Desarrollo de presentación binocular: historial de la fase inicial
 
 ### Prueba de escena fija en PSVR2
