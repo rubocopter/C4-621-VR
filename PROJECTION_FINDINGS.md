@@ -102,6 +102,142 @@ ctest --test-dir native\stereo_reprojection\build -C Release --output-on-failure
 
 Omitir `--gpu-exe` para la referencia CPU. Elegir siempre prefijos nuevos. El wrapper genera archivos de entrada binarios privados con firma `AC6RPRJ1`, Params de 48 bytes (`<4I6f2I`: sw/sh/tw/th, fx/fy/A/B/Wsign/eyeX, dos reservas), depth float32 contiguo y color RGBA8. El ejecutable devuelve índices uint32 y color RGBA8, con `0xffffffff` / color cero para huecos. Las máscaras y el JSON permiten inspeccionar cobertura, tiempos y diferencias. Los datos y capturas permanecen en rutas ignoradas por Git.
 
+## Contrato de proyección verificable en host — 18-10-2026
+
+Esta tanda parte de `fecfd27` sin cambios locales. No se ha iniciado AC6,
+SteamVR ni una sesión OpenXR, ni se han cargado/descargado sondas. Las builds
+se han generado en `out/geometry-20261018`, sin sobrescribir las anteriores.
+
+### Problema y alcance
+
+El shader vivo llevaba `fx`, A y B incrustados, mientras el offline recibía
+coeficientes. Sus fixtures solo ejercitaban el modelo histórico en la ruta viva.
+Además, el ejecutable offline aceptaba modelos con un polo dentro de [0,1] o
+con todo el intervalo detrás de la cámara. Ahora ambos consumidores validan
+el mismo contrato y compilan la misma función de proyección HLSL.
+
+`native/reprojection/projection.hpp` define la perspectiva row-vector:
+
+```text
+clip = (fx*x + jx*z, fy*y + jy*z, A*z + B, Wsign*z)
+deviceDepth = (A*z+B)/(Wsign*z)
+forwardDistance = Wsign*B/(Wsign*deviceDepth-A)  (positiva delante)
+targetX = (sourceX+0.5)*targetWidth/sourceWidth
+          - fx*eyeX*targetWidth/(2*forwardDistance)
+targetY = (sourceY+0.5)*targetHeight/sourceHeight
+```
+
+Se exige fx/fy positivos y finitos, B finito distinto de cero, Wsign exactamente
++1 o -1, profundidad delante de la cámara y ausencia de polos interiores. Se
+permite un polo en un extremo (far infinito), pero ese píxel se descarta en
+GPU. La extracción desde una matriz de 16 floats rechaza términos no admitidos
+y valores no finitos. Solo admite la forma documentada; no aproxima matrices
+con shear, ortográficas o generales.
+
+La revisión independiente encontró además que un modelo con B=`FLT_MIN` y
+A=-1 aceptaba distancias subnormales en CPU, descartadas al pasar a cero en
+shader. Se reprodujo RED en el test host y se rechazan coeficientes subnormales
+y extremos de distancia no normales. Es una restricción del dominio admitido,
+acorde con las [reglas float32 de Direct3D](https://learn.microsoft.com/en-us/windows/win32/direct3d11/floating-point-rules),
+no una corrección visual demostrada en AC6. El perfil histórico usa valores
+normales y no cambia.
+
+La función compartida `native/reprojection/parallel_projection.hlsl` mantiene
+el z-buffer por **device depth original**, con orden según el signo de B, y
+desempate por índice mínimo. Evita colapsar valores float32 adyacentes al
+ordenarlos por Z reconstruido. Se conservan máscaras/huecos y Load acotados.
+fy y los offsets jx/jy no se envían al shader porque se cancelan para **dos
+cámaras paralelas con la misma proyección**. El test NumPy contrasta esa
+simplificación con inversión/multiplicación 4×4 completa, con offsets distintos
+de cero, ambos signos de Z, forward/reverse-Z y tres tamaños destino.
+
+### Conexión real y procedencia
+
+`LiveStereo` recibe una `ProjectionCalibration` opcional por valor, la valida
+antes de abrir el mapping y conserva una copia inmutable. Sus coeficientes
+fx/A/B/Wsign llegan a las root constants y a ambos dispatches de ojo. Los
+fixtures GPU usan esta API; no es una estructura sin consumidor.
+
+El valor por defecto sigue siendo exactamente la observación del helper del
+16-10-2026 y baseline 0.5. No se habilita ningún selector nuevo en el presentador
+ni en el monitor. El evento XR `projection_calibration` y el campo `projection`
+del único JSON resumen del monitor registran coeficientes float32, procedencia `ac6_helper_observation_2026_10_16`,
+`frame_associated:false`, `same_projection_parallel_eyes:true` y
+`metric_scale_calibrated:false`. Un modelo distinto no puede llevar esa
+procedencia: debe declararse `explicit_unassociated_calibration`.
+
+**La mejora prepara y verifica la sustitución de coeficientes; no demuestra que
+la calibración histórica sea correcta para un fotograma actual de AC6.** Las
+root constants privadas pasan de 40 a 56 bytes (14 DWORDs, offsets comprobados).
+El mapping productor/consumidor v1 de **120 bytes permanece intacto**, igual que
+el formato offline `AC6RPRJ1` de Params de 48 bytes. No hay metadata nueva
+por fotograma, protocolo lateral ni hook nuevo.
+
+### Evidencia reproducible
+
+Antes de corregir el código, `test_live_stereo --projection-contract` falló en
+frame 3/ojo 0/píxel 2587 al usar el oráculo de una perspectiva diferente; el
+shader seguía aplicando la fija. `ac6_offline_stereo --self-test` falló con
+`Projection with interior pole or behind-camera depth range accepted`. El
+nuevo test de contrato tampoco compilaba antes de existir la implementación.
+Los logs locales RED están en `out/geometry-20261018/*red*`.
+
+Después de implementar:
+
+- 28 pruebas Python correctas (27 en la referencia inicial).
+- Siete CTests del consumidor correctos: validación de contrato, tres formatos,
+  720p/1080p/1440p, cuatro modelos alternativos en procesos/dispositivos
+  separados, comparación exacta de píxeles con oráculo CPU independiente,
+  oclusiones/empates, profundidades adyacentes, NaN/Inf/fuera de rango/±0,
+  pitches/offsets, saltos, reconexión, stale, fences y timeout.
+- 25 casos GPU offline con índices y color exactos frente al oráculo CPU
+  float64; incluyen polos extremos, ambos signos, forward/reverse-Z y empates.
+- Los cinco CTests del presentador y las suites del productor, captura, cámara,
+  proyección y transporte sintético continúan pasando. Nueve proyectos nativos
+  compilados en Release. La CI ejecuta además el contrato CPU sin necesitar GPU.
+
+Comandos sin juego ni runtime VR, desde la raíz (MSVC/SDK y dependencias de
+`BUILDING.md`; configurar también cada proyecto antes de su primera build):
+
+```powershell
+cmake -S native/live_stereo -B out/geometry-20261018/live_stereo -G 'Visual Studio 17 2022' -A x64
+cmake --build out/geometry-20261018/live_stereo --config Release
+ctest --test-dir out/geometry-20261018/live_stereo -C Release --output-on-failure
+cmake -S native/stereo_reprojection -B out/geometry-20261018/stereo_reprojection -G 'Visual Studio 17 2022' -A x64
+cmake --build out/geometry-20261018/stereo_reprojection --config Release
+out/geometry-20261018/stereo_reprojection/Release/ac6_offline_stereo.exe --self-test
+.venv-analysis/Scripts/python.exe -B -m unittest discover -s tests -v
+```
+
+GPU local: RTX 4070 Ti, sin WARP. Debug layer no disponible. La igualdad exacta
+corresponde a los fixtures, no a cualquier entrada junto a un límite de píxel
+entre float64 y float32. No hay evidencia visual, de rendimiento o comodidad
+nueva en PSVR2.
+
+### Integración temporal pendiente
+
+El productor copia el plano 0 de R32G8X24_TYPELESS como R32_TYPELESS, sin
+normalizar ni invertir sus bits; el consumidor interpreta float32. El ledger,
+la copia al final del mismo envío y las fences protegen la identidad del par
+color/depth y la vida de sus recursos. No identifican el constant buffer de
+la cámara que escribió ese depth ni una correspondencia entre depth y color
+postprocesado/TAA. El helper observado devuelve varias vistas; su contador no
+es el frame ID del stream. La orientación OpenXR publicada tampoco tiene esa
+asociación con la captura.
+
+Para añadir matrices por fotograma hay que observar un recurso/camino nuevo y
+probar su identidad con el envío elegible, incluidos cámara, viewport y estado
+de jitter. Solo entonces podrá diseñarse/versionarse metadata ligada a esa
+misma secuencia y al mismo slot, con rechazo de ausencias y desajustes. No se
+ofrece una API que acepte datos etiquetados como frame-matched sin esa prueba.
+La presentación sigue usando quads, sin poses/FOV asimétricos ni escala IPD.
+
+Siguiente comprobación física de regresión: una ventana de 20 s con el perfil
+ya probado 2560×1440/90°, girando lentamente la vista con el mando frente a
+un borde cercano y un fondo lejano, y confirmar profundidad fusionable sin
+duplicación ni congelación. Requiere preparación habitual y DLLs nuevas/no
+mapeadas; no se ha realizado durante esta sesión.
+
 ## Desarrollo de presentación binocular: historial de la fase inicial
 
 ### Prueba de escena fija en PSVR2

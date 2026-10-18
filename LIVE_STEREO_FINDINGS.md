@@ -20,6 +20,15 @@ La integración OpenXR usa capas quad como la prueba fija: LOCAL, 2 m, 2.4×1.35
 
 ## Verificación antes del visor
 
+**Actualización host, 18-10-2026:** el consumidor ya recibe una calibración
+estática validada y usa la misma función HLSL de proyección que el offline.
+Se verifican cuatro modelos alternativos con GPU real, sin habilitarlos en el
+presentador. El perfil histórico sigue por defecto, ahora registrado con
+procedencia y `frame_associated:false`. No cambia el protocolo v1 de 120 bytes,
+baseline, frescura, fences ni presentación. Véase el
+[contrato y pruebas de proyección](PROJECTION_FINDINGS.md#contrato-de-proyección-verificable-en-host--18-10-2026).
+No se ha añadido una validación física a los ensayos de visor descritos abajo.
+
 - Tres CTests del productor: límites/frescura/propiedad; pares GPU cambiantes con saturación, descarte, reanudación y resize; gate GPU pendiente, envío único, rechazo de color sin depth nuevo y publicación de fallo. El gate observa lotes simulados para comprobar la decisión, y el otro fixture comprueba copias reales.
 - Dos CTests del consumidor: procesos y dispositivos D3D12 separados, formatos/padding, colores/previews/blits exactos, paralaje y oclusión, fences retrasadas, saltos, reconexión, stale/Stopped y terminación acotada en vuelo. Debug layer no disponible en el entorno.
 - Revisión del productor: se corrigió el agotamiento de ledger que dejaba el estado Ready sin capturas. La regresión se observó fallar sin la corrección y pasar con ella. Revisión de gates sin nuevos hallazgos de seguridad.

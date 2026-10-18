@@ -200,3 +200,24 @@ La primera persona ya está probada por el usuario y Depth of Field ya está des
 - Pasadas V9/A720p25°, V10/B1080p90° y V11/C1440p90°, todas 27 s visibles y 15 s de seguimiento en PID30252, misión offline cooperativa confirmada. A: 1128 frames visibles/1110 actualizaciones; B: 2304/2152; C: 2287/2170. Cero pérdidas/fuentes descartadas, todos los procesos código0, hooks/prologue restaurados. Juego siguió respondiendo; sin cambios en archivos del juego ni configuración SteamVR.
 - B confirmó mayor giro, sin mejora clara de definición ni duplicación/deformación apreciable. Consulta OpenXR de solo lectura recomendó 2804×2860 por ojo para la vista completa; se conservó SteamVR tal como estaba. C usa salida2560×1440 igual al tamaño fuente y mantiene90°: el usuario respondió «Se veía más claro y sin tirones apreciables». Se registra como perfil de referencia explícito; defaults conservados para compatibilidad.
 - Intervalo medio A24.009254 ms, B11.749987 ms, C11.833966 ms. También hubo picos: Cmáximo72.3932 ms. No se atribuye causalmente esa variación a resolución ni se declara fluidez sostenida/latencia validada. Dos revisiones independientes sin bloqueantes; documentación y comandos en `QUALITY_PACING_FINDINGS.md`. Quedan proyecciones asimétricas, escala y ensayos prolongados.
+
+## 2026-10-18 — contrato estático de proyección, sesión autónoma sin juego
+
+- Base real `fecfd27`, checkout limpio; rama `codex/projection-contract-20261018`.
+  Builds nuevas bajo `out/geometry-20261018`; no se inició AC6/SteamVR/OpenXR,
+  no se inyectaron DLLs ni se modificaron archivos del juego o binarios previos.
+- RED reproducido: consumidor fijo contra perspectiva sintética (píxel 2587,
+  frame3/ojo0) y validación offline que aceptaba polos interiores/semiespacio
+  incorrecto. Se implementa contrato común, calibración inmutable del consumidor
+  y HLSL compartido; cuatro modelos alternativos pasan por la GPU real.
+- El perfil observado y baseline0.5 siguen por defecto. Logs del monitor/XR
+  identifican coeficientes y procedencia sin atribuirlos a un frame. Mapping
+  v1/120 bytes y archivo offline/48 bytes intactos; ningún hook nuevo ni gate
+  relajado. Matriz/cámara/jitter por fotograma continúan pendientes de evidencia.
+- Pruebas: 28 Python, siete CTests del consumidor, 25 casos internos GPU offline,
+  cinco CTests del presentador y suites anteriores. Detalles y comandos en
+  `PROJECTION_FINDINGS.md`; no se declara mejora visual ni temporal en visor.
+- La revisión independiente identificó aceptación de distancias subnormales
+  que SM5 puede llevar a cero. Regresión host RED, restricción de coeficientes
+  y distancias a valores normales (salvo polo infinito), y verificación de las
+  rutas afectadas. Perfil histórico intacto.

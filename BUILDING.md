@@ -39,6 +39,18 @@ cmake --build native/camera_probe/build --config Release
 
 Run only deterministic non-game tests in unattended CI. GPU fixtures and integration tests may need real D3D12 hardware, a graphics driver and/or a running game and headset. **A successful CI build is not a PSVR2 acceptance test.**
 
+The static projection contract can be checked without a GPU or OpenXR runtime:
+
+```powershell
+cmake -S native/live_stereo -B out/projection-contract -G "Visual Studio 17 2022" -A x64
+cmake --build out/projection-contract --config Release --target test_projection
+ctest --test-dir out/projection-contract -C Release -R projection_contract_validation --output-on-failure --no-tests=error
+```
+
+The full `live_stereo` CTest suite additionally exercises four explicit synthetic
+projection models on hardware D3D12 in separate processes. It does not open AC6,
+SteamVR or OpenXR. See [projection evidence](PROJECTION_FINDINGS.md#contrato-de-proyección-verificable-en-host--18-10-2026).
+
 ## Testing inside the headset
 
 Read [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) and [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md) first. The verified 18 October 2026 reference trial explicitly used `--eye-width 2560 --eye-height 1440 --rotation-limit-deg 90 --headtracking`. The program defaults remain 1280×720 and 25°.
