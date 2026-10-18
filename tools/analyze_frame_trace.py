@@ -104,6 +104,10 @@ def analyze_context_forwarding(events):
     if observed:
         if len(summaries) != 1 or summaries[0].get('forwarding_enabled') is not True:
             errors.append('missing_forwarding_contract')
+        if len(summaries) == 1 and 'window_started' in summaries[0]:
+            started = summaries[0]['window_started']
+            if type(started) is not bool or (invocations and not started):
+                errors.append('invalid_forwarding_window_state')
         if not analyze_context_scopes(events)['cpu_context_scope_complete']:
             errors.append('incomplete_forwarding_invocation_scope')
         rejection_statuses = {'adapter_mismatch', 'null_payload', 'null_child', 'invalid_child_vtable', 'invalid_target', 'unreadable'}
@@ -140,10 +144,12 @@ def analyze_context_forwarding(events):
                     raise ValueError('unknown forwarding status')
             except (KeyError, TypeError, ValueError):
                 errors.append('invalid_forwarding_snapshot')
-    return dict(context_forwarding_status=('complete' if not errors else 'rejected') if observed else 'not_observed',
+    status = ('complete' if invocations else 'no_coverage') if not errors else 'rejected'
+    return dict(context_forwarding_status=status if observed else 'not_observed',
                 context_forwarding_errors=sorted(set(errors)),
                 context_forwarding_candidates=candidates if not errors else 0,
                 context_forwarding_rejected=rejected,
+                context_forwarding_window_started=summaries[0].get('window_started') if len(summaries) == 1 else None,
                 context_forwarding_dispatch_observed=False)
 
 

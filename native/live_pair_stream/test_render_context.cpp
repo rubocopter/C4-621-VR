@@ -128,6 +128,7 @@ static void ExactForwardingAndCausalIdentity() {
     Require(result == expected && calls == 1, "Original result/call count changed");
     Require(Same(CurrentContextInvocation(), {}), "TLS scope leaked after return");
     const auto log = Log(observer);
+    Require(Boolean(Summary(log),"window_started"),"Initially observing window not retained after Stop");
     const auto rows = Rows(log, "render_context_invocation");
     Require(rows.size() == 1, "Completed invocation missing");
     const auto& row = rows[0];
@@ -165,12 +166,14 @@ static void PausedOneShotAndWriterGates() {
     });
     observer.Stop();
     const auto log = Log(observer);
+    Require(Boolean(Summary(log),"window_started"),"Successful BeginWindow not retained after Stop");
     Require(!observer.BeginWindow(), "Stopped observer reopened");
     observer.Invoke(nullptr, context.Get(), nullptr, original);
     Require(calls == 2 && Log(observer) == log, "Stopped invocation changed retained records");
     Require(!observer.HookRestored() && !observer.CreateHook(), "Stopped synthetic observer claimed hook evidence");
     RenderContextObserver never_started(false);
     never_started.Stop();
+    Require(!Boolean(Summary(Log(never_started)),"window_started"),"Never-opened window claimed admission");
     Require(!never_started.BeginWindow() && !never_started.Write(nullptr), "Stop did not close paused observer");
 }
 

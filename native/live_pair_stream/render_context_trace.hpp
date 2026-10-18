@@ -41,7 +41,7 @@ class RenderContextObserver {
 public:
     static constexpr std::size_t Capacity = 64;
     explicit RenderContextObserver(bool initially_observing = true,ContextForwardingLayout forwarding={}) noexcept
-        : window_(initially_observing ? Window::Observing : Window::Paused),forwarding_(forwarding) {}
+        : window_(initially_observing ? Window::Observing : Window::Paused),window_started_(initially_observing),forwarding_(forwarding) {}
     RenderContextObserver(const RenderContextObserver&) = delete;
     RenderContextObserver& operator=(const RenderContextObserver&) = delete;
 
@@ -68,7 +68,9 @@ public:
 
     bool BeginWindow() noexcept {
         auto expected = Window::Paused;
-        return window_.compare_exchange_strong(expected, Window::Observing);
+        const bool opened=window_.compare_exchange_strong(expected, Window::Observing);
+        if(opened) window_started_.store(true);
+        return opened;
     }
     void Stop() noexcept { window_.store(Window::Stopped); }
     bool HookRestored() const noexcept { return target_ && MatchesPrologue(target_); }
@@ -156,14 +158,14 @@ public:
                      "\"calls\":%llu,\"invalid\":%llu,\"reserved\":%llu,\"overflow\":%llu,\"samples\":%u,"
                      "\"sample_limit_reached\":%s,\"incomplete_slots\":%u,\"in_flight\":%llu,\"snapshot_complete\":%s,"
                      "\"targets_sampled_at\":\"invocation_entry\",\"virtual_dispatch_observed\":false,"
-                     "\"frame_associated\":false,\"gpu_binding_observed\":false,\"storage_retained\":true%s}\n",
+                     "\"frame_associated\":false,\"gpu_binding_observed\":false,\"storage_retained\":true,\"window_started\":%s%s}\n",
                      static_cast<long long>(frequency.QuadPart), unsigned(Capacity),
                      static_cast<unsigned long long>(calls), static_cast<unsigned long long>(invalid),
                      static_cast<unsigned long long>(reserved),
                      static_cast<unsigned long long>(reserved > Capacity ? reserved - Capacity : 0), unsigned(saved),
                      reserved >= Capacity ? "true" : "false", unsigned(limit - saved),
                      static_cast<unsigned long long>(active), active == 0 && saved == limit ? "true" : "false",
-                     forwarding_.Enabled()?",\"forwarding_enabled\":true":"") &&
+                     window_started_.load()?"true":"false",forwarding_.Enabled()?",\"forwarding_enabled\":true":"") &&
                !std::ferror(file);
     }
 
@@ -191,6 +193,7 @@ private:
                   std::atomic<RenderContextObserver*>::is_always_lock_free, "Callback requires lock-free atomics");
     std::array<Entry, Capacity> entries_{};
     std::atomic<Window> window_;
+    std::atomic<bool> window_started_;
     ContextForwardingLayout forwarding_{};
     std::atomic<std::uint64_t> calls_{0}, invalid_{0}, reserved_{0}, in_flight_{0};
     OriginalFn original_ = nullptr;

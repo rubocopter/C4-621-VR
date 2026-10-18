@@ -374,8 +374,8 @@ creación/desactivación ni relaja la comprobación conservadora de restauració
 ### Única observación mínima pendiente
 
 Tras comprobación actual de presencia y misión cooperativa offline: una
-ventana de ocho segundos con v26, sin visor/consumidor/seguimiento. v24 se
-rechazó antes de habilitar hooks, por lo que su PID puede reutilizarse si identidad,
+ventana de ocho segundos con v28, sin visor/consumidor/seguimiento. v26 terminó
+normalmente, por lo que su PID puede reutilizarse si identidad,
 prólogos y DLL nueva no mapeada pasan de nuevo el loader. Si hay un fallo o
 segunda cola, detener y conservar evidencia, sin recargar ni relajar gates.
 
@@ -385,3 +385,64 @@ parent, payload, hija, vtable y destino slot8 no nulos. Conservar JSON del
 loader, JSONL completo y análisis, también si solo hay rechazos. Eso permitirá
 analizar el destino concreto sin seguir punteros caducados; no certificará
 proyección por frame ni validación PSVR2.
+
+## Observación presencial v26 — PID 3228
+
+Confirmación expresa: «Sí, listo para los 8 segundos con v26». El loader volvió
+a verificar identidad, cooperativo, nombre nuevo y prólogo; código de salida 0.
+Una sola ventana sin visor/consumidor/seguimiento ni screenshots auxiliares.
+
+| Observación | Resultado |
+| --- | --- |
+| Captura | 3 pares, 716 descartes por backpressure, una cola DIRECT; sin fallo ni ledger inseguro |
+| Traza | 130 listas, cierre en envío 111, cero overflow/pares omitidos; procedencia de captura completa |
+| Contexto/helper | cero invocaciones del contexto, cero muestras admitidas del helper; 143202 llamadas sin token omitidas |
+| Forwarding | cero candidatos y cero rechazos de layout; no hubo snapshot de una interfaz hija |
+| Cierre | nueve hooks restaurados, DLL retenida inactiva y juego respondiendo |
+
+Se verificó en juego que la corrección de secciones supera la preparación y
+permite la captura normal. **No** se verificó el lector de interfaz hija en
+juego: no recibió ninguna invocación dentro de su ventana. La ausencia de
+registros tampoco demuestra una interfaz nula ni un tipo incompatible.
+
+El log v26 no conserva si `BeginWindow` se ejecutó. La lectura del código
+establece que `Armed` permanece durante la captura continua, así que no se
+atribuye el cero a una supuesta transición rápida hacia otro estado. No se ha
+aislado su causa ni probado que ese punto se ejecute en cada frame/estado.
+No se repitió ninguna carga tras v26.
+
+Evidencia privada: `evidence/context-forwarding-v26-3228-loader.json`,
+`evidence/context-forwarding-v26-3228-analysis.json` (analizador inicial),
+`evidence/context-forwarding-v26-3228-analysis-window.json` (resultado explícito
+de cobertura), `evidence/context-forwarding-v26-3228-observation.json` y
+`out/context-forwarding-20261018/corrected/Release/live_pair_probe_v26_3228.jsonl`.
+SHA-256 JSONL: `5e360791a51d391e89455bbf53510b4645a98710a96a194717f6bb92f8513b5f`.
+Ambos análisis conservan `capture_provenance_complete:true` y
+`frame_associated:false`; el segundo clasifica el forwarding `no_coverage`.
+
+### Cobertura vacía y apertura de ventana — host v28
+
+El analizador inicial decía `context_forwarding_status:complete` para una
+publicación vacía. Solo acreditaba integridad de publicación, sin candidatos,
+pero no hacía explícita la ausencia de cobertura. Un fixture reproduce RED
+ese resultado ambiguo y ahora exige `no_coverage` incluso con captura válida.
+
+El observador conserva `window_started` en su resumen: inicialmente true solo
+si el constructor abre la ventana; tras `BeginWindow` exitoso permanece true
+después de Stop. Es estado del control thread, sin nuevas lecturas/contadores
+en el callback. Python exige bool y rechaza false con invocaciones publicadas.
+Los logs anteriores devuelven `context_forwarding_window_started:null`:
+desconocido, sin reinterpretarlo como false ni inferirlo de timestamps.
+
+Build aislado `out/context-forwarding-20261018/window/Release/`, DLL nueva
+`ac6_live_pair_probe_v28.dll`, SHA-256
+`c97803093fdbd9b71f3c60fa24bea8a1a866c8ffd7a2d802a763338c34f29bf5`.
+**No cargada en AC6**. Ocho CTests correctos y suite Python de 68: 67 correctas,
+una integración GPU opcional omitida. La revisión independiente no encontró
+problemas. Las DLLs v24/v26 mapeadas se conservan intactas.
+
+La única próxima observación es la descrita arriba con v28, en otra ventana
+presencial, sin repetir v26. Además de las condiciones de éxito anteriores,
+debe registrar `window_started:true`. Si no hay invocaciones, conservar
+`no_coverage`: una ventana abierta y vacía permitirá acotar la investigación
+a la ejecución/cobertura del punto, sin seleccionar otra matriz por cercanía.

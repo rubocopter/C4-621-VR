@@ -117,8 +117,9 @@ pruebas con GPU local**.
    de scope CPU, sin asociación de la matriz con esos pares.
    El siguiente forwarding virtual y su uso por GPU siguen sin observarse;
    v24 se rechazó antes de habilitar hooks por dos secciones PE `.text`.
-   v26 corrige ese caso con RED/GREEN host y prepara la lectura acotada;
-   no se ha observado todavía la interfaz hija.
+   v26 corrige ese caso y completa captura con nueve hooks restaurados, pero
+   cero invocaciones del contexto: interfaz hija no observada. v28, solo host,
+   registra apertura de ventana y clasifica la publicación vacía `no_coverage`.
 2. **Geometría del visor y escala:** integrar poses/FOV por ojo, establecer
    unidades/IPD y presentación adecuada; validar físicamente antes de cambiar
    la ruta por defecto. La preparación host no acredita esas capacidades.
