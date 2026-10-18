@@ -16,6 +16,53 @@ def perspective(near=1, far=500000, reverse=True, handedness=1, jitter=(0, 0)):
 
 
 class ProjectionMathTests(unittest.TestCase):
+    def test_reverse_classification_does_not_compare_rounded_z_endpoints(self):
+        for sign in (-1, 1):
+            for reverse in (False, True):
+                m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+                     (-1e20 if reverse else 1e20) * sign, sign,
+                     0, 0, 1e20 if reverse else -1e20, 0]
+                self.assertEqual(inspect_projection(m)['reverse_z'], reverse)
+
+    def test_nonzero_small_denominator_is_a_finite_far_plane(self):
+        for sign in (-1, 1):
+            m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1e-20 * sign, sign, 0, 0, 1, 0]
+            self.assertTrue(math.isclose(view_z_from_depth(m, 0), sign * 1e20, rel_tol=1e-15))
+            self.assertTrue(math.isclose(inspect_projection(m)['far_game_units'], 1e20, rel_tol=1e-15))
+            point = unproject_ndc(m, .25, -.5, 0)
+            self.assertTrue(all(math.isfinite(v) for v in point))
+            for actual, expected in zip(project_view(m, point), (.25, -.5, 0)):
+                self.assertAlmostEqual(actual, expected)
+
+    def test_valid_projection_math_does_not_assume_a_minimum_world_unit(self):
+        for sign in (-1, 1):
+            for scale in (1e-20, 1e-30):
+                m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -sign, sign, 0, 0, scale, 0]
+                point = unproject_ndc(m, .25, -.5, 0)
+                self.assertTrue(math.isclose(point[2], sign * scale, rel_tol=1e-15))
+                for actual, expected in zip(project_view(m, point), (.25, -.5, 0)):
+                    self.assertAlmostEqual(actual, expected)
+
+    def test_rejects_small_unsupported_shear_and_noncanonical_w(self):
+        for index, value in ((1, 1e-12), (11, 1 + 1e-7)):
+            m = perspective()
+            m[index] = value
+            with self.assertRaises(ValueError):
+                inspect_projection(m)
+
+    def test_nonzero_depth_overflow_is_not_reported_as_an_infinite_far_pole(self):
+        m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1e-200, 1, 0, 0, 1e200, 0]
+        with self.assertRaises(ValueError):
+            view_z_from_depth(m, 0)
+
+    def test_projection_and_unprojection_reject_nonfinite_results(self):
+        m = [1e308, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 1, 0, 0, 2, 0]
+        with self.assertRaises(ValueError):
+            project_view(m, (2, 0, 1))
+        m[0] = 1e-308
+        with self.assertRaises(ValueError):
+            unproject_ndc(m, 1, 0, 0)
+
     def test_summary_keeps_jitter_separate_and_rejects_changing_depth_model(self):
         m = perspective()
         jittered = perspective(jitter=(0.5 / 2560, -1 / 1440))

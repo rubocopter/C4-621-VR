@@ -40,11 +40,13 @@ def reproject_eye(color, depth, matrix, eye_x, output_size=None, *, target_matri
                   source_index=np.full((out_height, out_width), -1, dtype=np.int64))
     valid = np.isfinite(depth) & (depth >= 0) & (depth <= 1)
     sy, sx = np.nonzero(valid)
-    denominator = matrix[11] * depth[sy, sx].astype('float64') - matrix[10]
+    device_depth = depth[sy, sx].astype('float64')
+    denominator = matrix[11] * device_depth - matrix[10]
     with np.errstate(divide='ignore', invalid='ignore'):
         z = matrix[14] / denominator
     forward = np.isfinite(z) & (z * matrix[11] > 0)
     sy, sx, z = sy[forward], sx[forward], z[forward]
+    device_depth = device_depth[forward]
     w = matrix[11] * z
     # Unproject/project analytically cancel for identical parallel projections.
     # Avoid multiplying/dividing Z at integer pixel boundaries during resizing.
@@ -60,8 +62,10 @@ def reproject_eye(color, depth, matrix, eye_x, output_size=None, *, target_matri
     target = np.floor(py[inside]).astype('int64') * out_width + np.floor(px[inside]).astype('int64')
     source = sy[inside] * width + sx[inside]
     distance = w[inside]
-    # Group by destination; nearest forward Z wins, source index breaks ties.
-    order = np.lexsort((source, distance, target))
+    # Original depth preserves distinctions that reconstructed float64 distance
+    # can lose. Its monotonic order is controlled by B for either W sign.
+    depth_order = -device_depth[inside] if matrix[14] > 0 else device_depth[inside]
+    order = np.lexsort((source, depth_order, target))
     ordered_target = target[order]
     first = np.r_[True, ordered_target[1:] != ordered_target[:-1]] if len(order) else np.empty(0, dtype=bool)
     winners = order[first]

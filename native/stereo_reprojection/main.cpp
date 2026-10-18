@@ -37,7 +37,7 @@ static void Validate(const Params& p) {
 }
 static std::vector<UINT> Oracle(const Params& p,const std::vector<float>& depth) {
     std::vector<UINT> ids(Count(p.tw,p.th),UINT_MAX);
-    std::vector<double> closest(ids.size(),std::numeric_limits<double>::infinity());
+    std::vector<double> closest(ids.size(),p.b>0?-std::numeric_limits<double>::infinity():std::numeric_limits<double>::infinity());
     for(UINT i=0;i<depth.size();++i) {
         double d=depth[i]; if(!std::isfinite(d)||d<0||d>1) continue;
         double z=static_cast<double>(p.wsign)*p.b/(p.wsign*d-p.a);
@@ -46,7 +46,9 @@ static std::vector<UINT> Oracle(const Params& p,const std::vector<float>& depth)
         double y=(i/p.sw+0.5)*p.th/p.sh;
         if(!std::isfinite(x)||x<0||x>=p.tw||y<0||y>=p.th) continue;
         UINT target=static_cast<UINT>(std::floor(y))*p.tw+static_cast<UINT>(std::floor(x));
-        if(z<closest[target]) { closest[target]=z; ids[target]=i; }
+        // Compare original depth: distinct samples may reconstruct identical
+        // double distances. Increasing source iteration breaks exact ties.
+        if(p.b>0?d>closest[target]:d<closest[target]) { closest[target]=d; ids[target]=i; }
     }
     return ids;
 }
@@ -178,12 +180,22 @@ static void SelfTest(Gpu& gpu) {
         Require(rejected,"Projection with interior pole or behind-camera depth range accepted");
     }
     unsigned cases=0;
+    for(float sign:{1.f,-1.f}) for(bool reverse:{false,true}) {
+        Params p{2,1,1,1,1,1,sign*(reverse?-1e20f:1e20f),reverse?1e20f:-1e20f,sign,0};
+        Require(Oracle(p,{0.25f,0.75f})[0]==(reverse?1u:0u),"CPU oracle loses occlusion order when reconstructed distances collapse");
+    }
     auto test=[&](Params p,std::vector<float> depth) {
         std::vector<UINT> color(depth.size()); for(UINT i=0;i<color.size();++i) color[i]=0xff000000|i*12345;
         auto expected=Oracle(p,depth); auto actual=gpu.Run(p,depth,color);
         Require(actual.indices==expected,"GPU winner differs from double-precision fixture oracle");
         for(UINT i=0;i<expected.size();++i) Require(actual.color[i]==(expected[i]==UINT_MAX?0:color[expected[i]]),"GPU color/coverage mismatch"); ++cases;
     };
+    for(float sign:{1.f,-1.f}) for(bool reverse:{false,true}) {
+        Params p{2,1,1,1,1,1,sign*(reverse?-1e20f:1e20f),reverse?1e20f:-1e20f,sign,0};
+        test(p,{.25f,.75f});test(p,{.75f,.25f});
+        p.a=sign*(reverse?-1.f:2.f);p.b=reverse?1e-20f:-2e-20f;
+        test(p,{.25f,.75f}); // Small game-unit scale with zero baseline.
+    }
     const float nan=std::numeric_limits<float>::quiet_NaN();
     for(float sign:{1.f,-1.f}) {
         Params p{8,6,8,6,1,1,-sign/9,10.f/9,sign,0};

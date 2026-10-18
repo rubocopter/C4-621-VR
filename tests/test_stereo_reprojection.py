@@ -16,6 +16,21 @@ def device_depth(distance):
 
 
 class StereoReprojectionTests(unittest.TestCase):
+    def test_occlusion_order_survives_collapsed_reconstructed_distances(self):
+        # Both Z values round to 1 in float64. Their original device depths
+        # still distinguish the nearest point; target centers are .25/.75.
+        color = np.array([[[255, 0, 0], [0, 255, 0]]], dtype='uint8')
+        for sign in (-1, 1):
+            for reverse in (False, True):
+                m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+                     (-1e20 if reverse else 1e20) * sign, sign,
+                     0, 0, 1e20 if reverse else -1e20, 0]
+                for values in ((.25, .75), (.75, .25)):
+                    result = reproject_eye(color, np.array([values], dtype='float32'), m, 0, (1, 1))
+                    expected = values.index(max(values) if reverse else min(values))
+                    self.assertEqual(result['source_index'][0, 0], expected)
+                    np.testing.assert_array_equal(result['color'][0, 0], color[0, expected])
+
     def test_distinct_eye_intrinsics_match_full_matrix_projection(self):
         color = np.ones((4, 16, 3))
         for sign in (-1, 1):
