@@ -5,6 +5,9 @@
 #include <atomic>
 #include <cstdio>
 #include <locale.h>
+#ifdef AC6_RENDER_CONTEXT_TRACE
+#include "render_context_trace.hpp"
+#endif
 
 namespace frame_trace {
 
@@ -68,7 +71,11 @@ public:
         Flight flight(*this);
         if (window_.load() != Window::Observing) return false;
         const auto ordinal = calls_.fetch_add(1, std::memory_order_relaxed) + 1;
-        return Store(sample, outputId, jitter, beginQpc, endQpc, thread, ordinal);
+        return Store(sample, outputId, jitter, beginQpc, endQpc, thread, ordinal
+#ifdef AC6_RENDER_CONTEXT_TRACE
+                     , CurrentContextInvocation()
+#endif
+        );
     }
 
     // Admission closes immediately. Already admitted callbacks may finish later.
@@ -122,7 +129,18 @@ public:
             if (!print("],\"stack_count\":%u,\"stack\":[", unsigned(e.stack_count))) return false;
             for (unsigned j = 0; j < e.stack_count; ++j)
                 if (!print(j ? ",\"0x%llx\"" : "\"0x%llx\"", static_cast<unsigned long long>(e.stack[j]))) return false;
-            if (!print("]}\n")) return false;
+            if (!print("]")) return false;
+#ifdef AC6_RENDER_CONTEXT_TRACE
+            const auto& c=e.context;
+            if (!print(",\"cpu_context\":{\"invocation_ordinal\":%llu,\"thread\":%u,"
+                       "\"scene\":\"0x%llx\",\"context\":\"0x%llx\",\"packet\":\"0x%llx\","
+                       "\"vtable\":\"0x%llx\",\"slot1_target\":\"0x%llx\",\"slot5_target\":\"0x%llx\"}",
+                       static_cast<unsigned long long>(c.ordinal),c.thread,
+                       static_cast<unsigned long long>(c.scene),static_cast<unsigned long long>(c.context),
+                       static_cast<unsigned long long>(c.packet),static_cast<unsigned long long>(c.vtable),
+                       static_cast<unsigned long long>(c.slot1_target),static_cast<unsigned long long>(c.slot5_target))) return false;
+#endif
+            if (!print("}\n")) return false;
         }
         LARGE_INTEGER frequency{};
         QueryPerformanceFrequency(&frequency);
@@ -151,6 +169,9 @@ private:
         std::array<std::uintptr_t, StackDepth> stack{};
         USHORT stack_count = 0;
         std::atomic<bool> ready{false};
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        ContextInvocation context;
+#endif
     };
     struct Flight {
         ProjectionObserver& owner;
@@ -192,7 +213,11 @@ private:
     }
 
     bool Store(const ProjectionSnapshot& sample, std::uintptr_t output, unsigned char jitter,
-               std::int64_t begin, std::int64_t end, std::uint32_t thread, std::uint64_t ordinal) noexcept {
+               std::int64_t begin, std::int64_t end, std::uint32_t thread, std::uint64_t ordinal
+#ifdef AC6_RENDER_CONTEXT_TRACE
+               ,const ContextInvocation& context
+#endif
+               ) noexcept {
         if (!sample.view || !output || !Supported(sample)) {
             invalid_.fetch_add(1, std::memory_order_relaxed);
             return false;
@@ -205,6 +230,9 @@ private:
         auto& e = entries_[static_cast<std::size_t>(index)];
         e.sample = sample; e.output = output; e.jitter = jitter; e.ordinal = ordinal;
         e.begin_qpc = begin; e.end_qpc = end; e.thread = thread;
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        e.context=context;
+#endif
         void* stack[StackDepth]{};
         e.stack_count = CaptureStackBackTrace(1, static_cast<DWORD>(StackDepth), stack, nullptr);
         for (unsigned i = 0; i < e.stack_count; ++i) e.stack[i] = reinterpret_cast<std::uintptr_t>(stack[i]);
@@ -217,6 +245,9 @@ private:
         auto& self = *instance_.load(std::memory_order_acquire);
         Flight flight(self); // covers the original AND post-call sampling
         const bool observe = self.window_.load() == Window::Observing;
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        const auto context=CurrentContextInvocation(); // identity at helper ENTRY
+#endif
         std::uint64_t ordinal = 0;
         LARGE_INTEGER begin{}, end{};
         std::uint32_t thread = 0;
@@ -231,7 +262,11 @@ private:
             ProjectionSnapshot sample;
             if (ReadProjectionSnapshot(view, output, sample))
                 self.Store(sample, reinterpret_cast<std::uintptr_t>(output), jitter,
-                           begin.QuadPart, end.QuadPart, thread, ordinal);
+                           begin.QuadPart, end.QuadPart, thread, ordinal
+#ifdef AC6_RENDER_CONTEXT_TRACE
+                           ,context
+#endif
+                );
             else self.invalid_.fetch_add(1, std::memory_order_relaxed);
         }
         return result; // preserve the original return, even if different from output

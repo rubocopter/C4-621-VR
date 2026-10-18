@@ -7,6 +7,9 @@
 #ifdef AC6_FRAME_TRACE
 #include "projection_observer.hpp"
 static auto* projection_observer=new frame_trace::ProjectionObserver(false);
+#ifdef AC6_RENDER_CONTEXT_TRACE
+static auto* render_context_observer=new frame_trace::RenderContextObserver(false);
+#endif
 #endif
 extern "C" size_t PairPresentSlot(void),PairExecuteSlot(void),PairBarrierSlot(void),PairResetSlot(void),PairCloseSlot(void),PairResizeSlot(void),PairResize1Slot(void);
 using namespace live_pair;
@@ -107,6 +110,9 @@ int RunLivePairProbe(bool self_test,bool gate_test=false) {
         auto status=MH_Initialize(); if(status!=MH_OK) throw std::runtime_error(MH_StatusToString(status));
 #ifdef AC6_FRAME_TRACE
         if(!self_test&&!projection_observer->CreateHook()) throw std::runtime_error("Projection helper fingerprint/hook rejected");
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        if(!self_test&&!render_context_observer->CreateHook()) throw std::runtime_error("Render context fingerprint/hook rejected");
+#endif
 #endif
         const std::array<void*,7> detours={reinterpret_cast<void*>(&Present),reinterpret_cast<void*>(&Execute),reinterpret_cast<void*>(&Barrier),reinterpret_cast<void*>(&Reset),reinterpret_cast<void*>(&Close),reinterpret_cast<void*>(&Resize),reinterpret_cast<void*>(&Resize1)};
         const std::array<void**,7> originals={reinterpret_cast<void**>(&original_present),reinterpret_cast<void**>(&original_execute),reinterpret_cast<void**>(&original_barrier),reinterpret_cast<void**>(&original_reset),reinterpret_cast<void**>(&original_close),reinterpret_cast<void**>(&original_resize),reinterpret_cast<void**>(&original_resize1)};
@@ -144,6 +150,9 @@ int RunLivePairProbe(bool self_test,bool gate_test=false) {
                 if(capture->shared&&Read32(capture->shared->stop_requested)) break;
                 if(GetTickCount64()-started>=2000 && capture->stage.load()==Capture::Collecting) capture->PrepareStream(name);
 #ifdef AC6_FRAME_TRACE
+#ifdef AC6_RENDER_CONTEXT_TRACE
+                if(capture->stage.load()==Capture::Armed) render_context_observer->BeginWindow();
+#endif
                 if(capture->stage.load()==Capture::Armed) projection_observer->BeginWindow();
 #endif
                 if(capture->shared&&!published) { published=true; std::fprintf(log,"{\"phase\":\"stream_ready\",\"mapping_suffix\":\"%ls_%lu\",\"width\":%u,\"height\":%u}\n",stem.c_str(),GetCurrentProcessId(),capture->shared->width,capture->shared->height); std::fflush(log); }
@@ -153,11 +162,18 @@ int RunLivePairProbe(bool self_test,bool gate_test=false) {
         capture->StopStream();
 #ifdef AC6_FRAME_TRACE
         projection_observer->Stop();
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        render_context_observer->Stop();
+#endif
 #endif
         status=MH_DisableHook(MH_ALL_HOOKS); if(status!=MH_OK) throw std::runtime_error(MH_StatusToString(status)); activation_attempted=false;
         bool restored=true; for(unsigned i=0;i<7;++i) restored=restored&&std::memcmp(before[i].data(),targets[i],16)==0;
 #ifdef AC6_FRAME_TRACE
         restored=restored&&(self_test||projection_observer->HookRestored());
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        restored=restored&&(self_test||render_context_observer->HookRestored());
+        if(!render_context_observer->Write(log)) throw std::runtime_error("Write render context diagnostics failed");
+#endif
         capture->WriteFrameTrace(log);
         if(!projection_observer->Write(log)) throw std::runtime_error("Write projection diagnostics failed");
 #endif
@@ -179,11 +195,17 @@ int RunLivePairProbe(bool self_test,bool gate_test=false) {
         capture->Fail();
 #ifdef AC6_FRAME_TRACE
         projection_observer->Stop();
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        render_context_observer->Stop();
+#endif
 #endif
         if(activation_attempted) { const auto cleanup=MH_DisableHook(MH_ALL_HOOKS);std::fprintf(log,"{\"phase\":\"cleanup\",\"status\":\"%s\"}\n",MH_StatusToString(cleanup)); }
         bool restored=true;for(unsigned i=0;i<7;++i) if(targets[i]) restored=restored&&std::memcmp(before[i].data(),targets[i],16)==0;
 #ifdef AC6_FRAME_TRACE
         restored=restored&&(self_test||projection_observer->HookRestored());
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        restored=restored&&(self_test||render_context_observer->HookRestored());
+#endif
 #endif
         std::fprintf(log,"{\"phase\":\"failed\",\"message\":\"%s\"}\n",error.what());
         std::fprintf(log,"{\"phase\":\"disabled\",\"hooks_restored\":%s,\"dll_retained_inactive\":true}\n",restored?"true":"false");std::fclose(log);return 1;

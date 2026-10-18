@@ -32,6 +32,69 @@ def projection_candidate_valid(sample):
         return False
 
 
+def analyze_context_scopes(events):
+    """Corroborate explicit TLS invocation identities, never temporal guesses."""
+    invocations = [e for e in events if e.get('phase') == 'render_context_invocation']
+    summaries = [e for e in events if e.get('phase') == 'render_context_summary']
+    samples = [e for e in events if e.get('phase') == 'projection_sample']
+    observed = bool(invocations or summaries or any('cpu_context' in s for s in samples))
+    errors, scoped, outside = [], 0, 0
+    if observed:
+        if len(summaries) != 1:
+            errors.append('missing_or_duplicate_context_summary')
+        summary = summaries[0] if len(summaries) == 1 else {}
+        if (summary.get('snapshot_complete') is not True or summary.get('overflow') != 0
+                or summary.get('incomplete_slots') != 0 or summary.get('in_flight') != 0
+                or summary.get('samples') != len(invocations)):
+            errors.append('incomplete_context_observation')
+        by_ordinal = {}
+        for invocation in invocations:
+            ordinal = invocation.get('ordinal')
+            if type(ordinal) is not int or ordinal <= 0 or ordinal in by_ordinal:
+                errors.append('ambiguous_context_invocation')
+            else:
+                by_ordinal[ordinal] = invocation
+        identity_fields = ('scene', 'context', 'packet', 'vtable', 'slot1_target', 'slot5_target')
+        for sample in samples:
+            try:
+                scope = sample['cpu_context']
+                ordinal = scope['invocation_ordinal']
+                if type(ordinal) is not int or ordinal < 0:
+                    raise ValueError('bad invocation ordinal')
+                if ordinal == 0:
+                    outside += 1
+                    continue
+                invocation = by_ordinal[ordinal]
+                for record in (invocation, sample):
+                    for field in ('begin_qpc', 'end_qpc'):
+                        value = record[field]
+                        if type(value) is not int or not 0 < value < 2**63:
+                            raise ValueError('invalid QPC integer')
+                for record in (invocation, sample, scope):
+                    value = record['thread']
+                    if type(value) is not int or not 0 < value < 2**32:
+                        raise ValueError('invalid thread integer')
+                for field in identity_fields:
+                    value = scope[field]
+                    if not isinstance(value, str) or not value.startswith('0x') or int(value, 16) <= 0:
+                        raise ValueError('invalid context identity')
+                    if value != invocation[field]:
+                        raise ValueError('different context invocation')
+                if sample['thread'] != invocation['thread'] or scope['thread'] != sample['thread']:
+                    raise ValueError('different recording thread')
+                if not invocation['begin_qpc'] <= sample['begin_qpc'] <= sample['end_qpc'] <= invocation['end_qpc']:
+                    raise ValueError('helper outside invocation lifetime')
+                scoped += 1
+            except (KeyError, TypeError, ValueError):
+                errors.append('unresolved_helper_context_scope')
+    return dict(cpu_context_scope_status=('complete' if not errors else 'rejected') if observed else 'not_observed',
+                cpu_context_scope_complete=observed and not errors,
+                cpu_context_scope_errors=sorted(set(errors)),
+                scoped_projection_candidates=scoped if not errors else 0,
+                projection_candidates_outside_context_scope=outside,
+                cpu_scope_gpu_binding_observed=False)
+
+
 def analyze(events):
     errors = []
     def rows(phase):
@@ -144,7 +207,8 @@ def analyze(events):
                 frame_associated=False, projection_association='missing_raster_binding',
                 missing=['GPU constant-buffer/root binding and bytes at the depth-writing draw',
                          'actual raster viewport/scissor and jitter convention',
-                         'view transform and depth-to-postprocessed-color/TAA history mapping'])
+                         'view transform and depth-to-postprocessed-color/TAA history mapping'],
+                **analyze_context_scopes(events))
 
 
 def main():
