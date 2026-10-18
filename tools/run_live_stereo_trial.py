@@ -36,12 +36,27 @@ def consumer_command(exe, mode, mapping, prefix, log, pid, tracking, width, heig
 
 
 def rows(path):
-    if not path.exists():
-        return []
+    """Read complete JSON object events without failing on an in-progress write.
+
+    The producer appends to its JSONL file while this consumer polls it.
+    An incomplete or malformed line must not prevent later valid events.
+    """
     try:
-        return [json.loads(s) for s in path.read_text(encoding='utf-8').splitlines() if s.endswith('}')]
-    except PermissionError:
+        lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
+    except (FileNotFoundError, PermissionError):
         return []
+    events = []
+    for line in lines:
+        line = line.strip()
+        if not line.endswith('}'):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events
 
 
 def request_stop(name, expected_pid=None):

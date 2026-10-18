@@ -53,6 +53,12 @@ class LiveTrialControlTests(unittest.TestCase):
             kernel.CloseHandle(handle)
         self.assertFalse(request_stop(name), 'Absent mapping is not an error during cleanup')
 
+    def test_log_reader_survives_malformed_complete_lines(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'log.jsonl'
+            path.write_text('{"phase":"ready"}\n{"phase": "broken",}\nnull\n{"phase":"done"}\n{"phase":', encoding='utf-8')
+            self.assertEqual(rows(path), [{'phase': 'ready'}, {'phase': 'done'}])
+
     def test_log_reader_ignores_incomplete_final_line(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'log.jsonl'
