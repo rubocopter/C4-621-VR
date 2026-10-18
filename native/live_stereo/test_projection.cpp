@@ -9,6 +9,34 @@ static void Reject(const std::function<void()>& action) {
     Require(rejected,"Invalid projection accepted");
 }
 int main() try {
+    const RayIntrinsics source{2,4,.25f,-.125f,1};
+    ParallelEyeProjections eyes{source,{RayIntrinsics{1,2,-.125f,.125f,1},RayIntrinsics{4,8,.25f,0,1}}};
+    ProjectionCalibration explicitEyes{{2,4,-1,2,1},CalibrationProvenance::ExplicitUnassociated,eyes};
+    explicitEyes.Validate();
+    Require(explicitEyes.Json().find("\"same_projection_parallel_eyes\":false")!=std::string::npos,"Distinct eye metadata must not claim identical projections");
+    const auto left=eyes.Transform(0),right=eyes.Transform(1);
+    Require(left.scaleX==.5f&&left.scaleY==.5f&&left.offsetX==-.25f&&left.offsetY==.1875f,"Left ray transform");
+    Require(right.scaleX==2&&right.scaleY==2&&right.offsetX==-.25f&&right.offsetY==.25f,"Right ray transform");
+    Reject([&]{eyes.Transform(2);});
+    auto inconsistent=explicitEyes;inconsistent.eyeProjections->source.fx=3;Reject([&]{inconsistent.Validate();});
+    inconsistent=explicitEyes;inconsistent.eyeProjections->target[1].wsign=-1;Reject([&]{inconsistent.Validate();});
+    auto mislabeled=ProjectionCalibration::LegacyObservedAc6();mislabeled.eyeProjections=eyes;Reject([&]{mislabeled.Validate();});
+    for(float bad:{0.f,-1.f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::denorm_min()}) {
+        auto invalid=eyes;invalid.target[0].fx=bad;Reject([&]{invalid.Transform(0);});
+    }
+    auto overflow=eyes;overflow.source.fx=std::numeric_limits<float>::min();overflow.target[0].fx=std::numeric_limits<float>::max();Reject([&]{overflow.Transform(0);});
+    // Finite valid intrinsics can overflow at raster time. GPU must reject
+    // the nonfinite coordinate before converting it into any buffer index.
+    ParallelEyeProjections extreme{{1,1,0,0,1},{RayIntrinsics{1,1e38f,0,-1e38f,1},RayIntrinsics{}}};
+    extreme.Validate(Perspective{1,1,-1,2,1});
+    auto identity=eyes;identity.target={source,source};Require(identity.Transform(0).Identity()&&identity.Transform(1).Identity(),"Identity rays must preserve legacy path");
+    auto sameEyes=explicitEyes;sameEyes.eyeProjections=identity;
+    Require(sameEyes.Json().find("\"same_projection_parallel_eyes\":true")!=std::string::npos,"Identical eye metadata");
+    for(float sign:{1.f,-1.f}) {
+        std::array<float,16> m{2,0,0,0,0,4,0,0,.25f*sign,-.125f*sign,-sign,sign,0,0,2,0};
+        auto rays=RayIntrinsics::FromRowMatrix(m);
+        Require(rays.cx==.25f&&rays.cy==-.125f&&rays.wsign==sign,"Principal point must be normalized by W sign");
+    }
     for(float sign:{1.f,-1.f}) for(bool reverse:{false,true}) {
         const Perspective p{1,2,sign*(reverse?-1.f:2.f),reverse?2.f:-2.f,sign};
         p.Validate();

@@ -13,6 +13,9 @@
 #include <cstring>
 #include <limits>
 #include <functional>
+#include <d3dcompiler.h>
+#include <d3d11shader.h>
+#include "shader.hpp"
 using Microsoft::WRL::ComPtr;
 namespace {
 // Test-only models, independent of the consumer. 1..4 exercise a different
@@ -21,8 +24,9 @@ UINT fixtureProfile=0;
 struct FixtureProjection { double fx,a,b,sign; };
 FixtureProjection Model() {
     if(!fixtureProfile) return {0.572404087,-2.02655792e-6,1.00000203,1};
-    const double sign=fixtureProfile>2?-1:1;
-    const bool reverse=fixtureProfile%2==1;
+    const auto convention=(fixtureProfile-1)%4;
+    const double sign=convention>=2?-1:1;
+    const bool reverse=convention%2==0;
     return {1,sign*(reverse?-1:2),reverse?2.0:-2.0,sign};
 }
 void Require(bool b,const char* why) { if(!b) throw std::runtime_error(why); }
@@ -62,9 +66,10 @@ struct Gpu {
         Check(device->CreateCommandList(0,q.Type,allocator.Get(),nullptr,IID_PPV_ARGS(&list)),"list"); Check(list->Close(),"close");
         Check(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&fence)),"fence"); event.h=CreateEventW(nullptr,FALSE,FALSE,nullptr);
     }
-    ComPtr<ID3D12Resource> Buffer(UINT64 bytes,D3D12_HEAP_TYPE heap,D3D12_RESOURCE_STATES state,bool shared=false) {
+    ComPtr<ID3D12Resource> Buffer(UINT64 bytes,D3D12_HEAP_TYPE heap,D3D12_RESOURCE_STATES state,bool shared=false,bool uav=false) {
         D3D12_HEAP_PROPERTIES hp{}; hp.Type=heap;
         D3D12_RESOURCE_DESC d{}; d.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER; d.Width=bytes; d.Height=1; d.DepthOrArraySize=1; d.MipLevels=1; d.SampleDesc.Count=1; d.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        if(uav) d.Flags=D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
         ComPtr<ID3D12Resource> r; Check(device->CreateCommittedResource(&hp,shared?D3D12_HEAP_FLAG_SHARED:D3D12_HEAP_FLAG_NONE,&d,state,nullptr,IID_PPV_ARGS(&r)),"buffer"); return r;
     }
     void Begin() { Check(allocator->Reset(),"reset allocator"); Check(list->Reset(allocator.Get(),nullptr),"reset list"); }
@@ -82,6 +87,60 @@ struct Gpu {
         }
     }
 };
+void VerifyNonfiniteProjection() {
+    // Exercise the production helper without ever using its returned target as
+    // an address: even a bad NaN->uint conversion writes only these 16 bytes.
+    Gpu gpu;
+    std::string shader=LiveStereoHlsl;
+    shader+=R"HLSL(
+RWByteAddressBuffer fixtureResult : register(u4);
+[numthreads(1,1,1)] void Fixture() {
+    uint target,key;
+    bool accepted=ProjectParallel(0,128,128,1280,720,0.3,1,-1,2,1,0,
+                                 float4(scaleX,scaleY,offsetX,offsetY),target,key);
+    fixtureResult.Store4(0,uint4(accepted?1:0,target,key,0));
+})HLSL";
+    ComPtr<ID3DBlob> code,errors;
+    // Strict IEEE/no optimization keeps the overflow->NaN path observable;
+    // optimized reassociation can incidentally reject these particular inputs.
+    const auto hr=D3DCompile(shader.data(),shader.size(),"projection_fixture",nullptr,nullptr,"Fixture","cs_5_0",D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_IEEE_STRICTNESS|D3DCOMPILE_SKIP_OPTIMIZATION,0,&code,&errors);
+    if(FAILED(hr)&&errors) std::cerr<<static_cast<const char*>(errors->GetBufferPointer());
+    Check(hr,"compile projection fixture");
+    D3D12_ROOT_PARAMETER params[2]{};
+    params[0].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;params[0].Constants={0,0,18};
+    params[1].ParameterType=D3D12_ROOT_PARAMETER_TYPE_UAV;params[1].Descriptor.ShaderRegister=4;
+    D3D12_ROOT_SIGNATURE_DESC desc{};desc.NumParameters=2;desc.pParameters=params;
+    ComPtr<ID3DBlob> bytes;Check(D3D12SerializeRootSignature(&desc,D3D_ROOT_SIGNATURE_VERSION_1,&bytes,&errors),"fixture root bytes");
+    ComPtr<ID3D12RootSignature> root;Check(gpu.device->CreateRootSignature(0,bytes->GetBufferPointer(),bytes->GetBufferSize(),IID_PPV_ARGS(&root)),"fixture root");
+    D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};pd.pRootSignature=root.Get();pd.CS={code->GetBufferPointer(),code->GetBufferSize()};
+    ComPtr<ID3D12PipelineState> pipeline;Check(gpu.device->CreateComputePipelineState(&pd,IID_PPV_ARGS(&pipeline)),"fixture pipeline");
+    auto result=gpu.Buffer(16,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,false,true);
+    auto readback=gpu.Buffer(16,D3D12_HEAP_TYPE_READBACK,D3D12_RESOURCE_STATE_COPY_DEST);
+    gpu.Begin();gpu.list->SetComputeRootSignature(root.Get());gpu.list->SetPipelineState(pipeline.Get());
+    // Scalar root packing: scaleX/Y at DWORD14/15, offsetX/Y at16/17.
+    UINT constants[18]{};const float transform[4]={1,1e38f,0,-1e38f};std::memcpy(constants+14,transform,16);
+    gpu.list->SetComputeRoot32BitConstants(0,18,constants,0);gpu.list->SetComputeRootUnorderedAccessView(1,result->GetGPUVirtualAddress());gpu.list->Dispatch(1,1,1);
+    auto barrier=Transition(result.Get(),D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_COPY_SOURCE);gpu.list->ResourceBarrier(1,&barrier);
+    gpu.list->CopyBufferRegion(readback.Get(),0,result.Get(),0,16);gpu.End();
+    void* mapped=nullptr;D3D12_RANGE range{0,16};Check(readback->Map(0,&range,&mapped),"fixture read");UINT accepted=1;std::memcpy(&accepted,mapped,4);D3D12_RANGE empty{0,0};readback->Unmap(0,&empty);
+    Require(accepted==0,"Nonfinite mapped Y accepted by GPU projection");gpu.NoErrors();
+    std::cout<<"PASS nonfinite GPU Y rejected before target indexing\n";
+}
+void VerifyShaderIsolation() {
+    for(bool distinct:{false,true}) {
+        D3D_SHADER_MACRO macros[]={{"AC6_DISTINCT_INTRINSICS","1"},{nullptr,nullptr}};
+        ComPtr<ID3DBlob> code,errors;
+        Check(D3DCompile(LiveStereoHlsl,sizeof(LiveStereoHlsl)-1,"mode_fixture",distinct?macros:nullptr,nullptr,"DepthPass","cs_5_0",D3DCOMPILE_ENABLE_STRICTNESS,0,&code,&errors),"compile shader mode fixture");
+        ComPtr<ID3D11ShaderReflection> reflection;
+        Check(D3DReflect(code->GetBufferPointer(),code->GetBufferSize(),IID_PPV_ARGS(&reflection)),"shader reflection");
+        for(const char* name:{"scaleX","scaleY","offsetX","offsetY"}) {
+            D3D11_SHADER_VARIABLE_DESC desc{};
+            Check(reflection->GetConstantBufferByName("Params")->GetVariableByName(name)->GetDesc(&desc),"intrinsics variable reflection");
+            Require(bool(desc.uFlags&D3D_SVF_USED)==distinct,"Default shader must not read optional eye transforms");
+        }
+    }
+    std::cout<<"PASS optional transform constants absent from default shader reads\n";
+}
 // Nontrivial source pitches/offsets and half-size horizontal output create
 // collisions. Alpha intentionally varies: consumer must always output 255.
 float Depth(UINT x,UINT y,UINT frame) {
@@ -114,7 +173,19 @@ std::vector<UINT> Oracle(const live_pair::Header& h,UINT frame,UINT eye,UINT eye
         double z=p.sign*p.b/(p.sign*double(d)-p.a);
         if(!std::isfinite(z)||z<=0) continue;
         double px=(x+0.5)*eyeWidth/h.width-p.fx*(eye?0.25:-0.25)*eyeWidth/(2*z),py=(y+0.5)*eyeHeight/h.height;
-        if(px<0||px>=eyeWidth) continue;
+        if(fixtureProfile>4&&fixtureProfile<9) {
+            // Independent view-space reconstruction, then destination clip.
+            // Do not use the production affine-map builder as the oracle.
+            const double viewZ=p.sign*z;
+            const double viewX=((2*(x+0.5)/h.width-1)*z-0.125*p.sign*viewZ)/p.fx;
+            const double viewY=(1-2*(y+0.5)/h.height)*z-(-0.25*p.sign)*viewZ;
+            const double targetFx=eye?0.75:1.25,targetFy=0.5;
+            const double targetCx=eye?0.0625:-0.1875,targetCy=0.0625;
+            const double clipX=targetFx*(viewX-(eye?0.25:-0.25))+targetCx*p.sign*viewZ;
+            const double clipY=targetFy*viewY+targetCy*p.sign*viewZ;
+            px=(clipX/z+1)*eyeWidth/2;py=(1-clipY/z)*eyeHeight/2;
+        }
+        if(px<0||px>=eyeWidth||py<0||py>=eyeHeight) continue;
         UINT t=UINT(std::floor(py))*eyeWidth+UINT(std::floor(px)),id=y*h.width+x;
         if(z<nearest[t]||(z==nearest[t]&&id<winner[t])) { nearest[t]=z;winner[t]=id;out[t]=Rgba(x,y,frame,h.color_format); }
     }
@@ -171,10 +242,16 @@ void VerifyBlits(Gpu& gpu,LiveStereo& stereo,const live_pair::Header& h,UINT fra
 std::unique_ptr<LiveStereo> ConfiguredStereo(Gpu& gpu,const std::wstring& name,UINT width,UINT height) {
     if(fixtureProfile) {
         const auto p=Model();
-        // Nonzero principal point offsets are intentionally omitted from the
-        // reduced contract: they cancel for identical parallel projections.
         std::array<float,16> m{float(p.fx),0,0,0,0,1,0,0,0.125f,-0.25f,float(p.a),float(p.sign),0,0,float(p.b),0};
         reprojection::ProjectionCalibration calibration{reprojection::Perspective::FromRowMatrix(m),reprojection::CalibrationProvenance::ExplicitUnassociated};
+        if(fixtureProfile>4) {
+            m[8]=.125f*float(p.sign);m[9]=-.25f*float(p.sign);
+            auto left=m,right=m;left[0]=1.25f;right[0]=.75f;left[5]=right[5]=.5f;
+            left[8]=-.1875f*float(p.sign);right[8]=.0625f*float(p.sign);left[9]=right[9]=.0625f*float(p.sign);
+            if(fixtureProfile==9) left=right=m;
+            calibration.eyeProjections=reprojection::ParallelEyeProjections{reprojection::RayIntrinsics::FromRowMatrix(m),
+                {reprojection::RayIntrinsics::FromRowMatrix(left),reprojection::RayIntrinsics::FromRowMatrix(right)}};
+        }
         return std::make_unique<LiveStereo>(gpu.device.Get(),gpu.queue.Get(),name,0.5f,width,height,calibration);
     }
     // Keep exercising the original three-argument call for the default fixture.
@@ -201,6 +278,11 @@ void Worker(const std::wstring& name,const std::wstring& prefix,bool timeout,UIN
         Reject([&]{LiveStereo invalid(gpu.device.Get(),gpu.queue.Get(),name,0.5f,eyeWidth,eyeHeight,bad);},"Invalid projection reached stream consumer");
         Require(live_pair::Read32(h.consumer_pid)==0,"Invalid calibration claimed stream");
     }
+    auto invalidEyes=reprojection::ProjectionCalibration{{1,1,-1,2,1},reprojection::CalibrationProvenance::ExplicitUnassociated};
+    invalidEyes.eyeProjections=reprojection::ParallelEyeProjections{{1,1,0,0,1},{reprojection::RayIntrinsics{},reprojection::RayIntrinsics{}}};
+    invalidEyes.eyeProjections->target[1].cy=std::numeric_limits<float>::quiet_NaN();
+    Reject([&]{LiveStereo invalid(gpu.device.Get(),gpu.queue.Get(),name,0.5f,eyeWidth,eyeHeight,invalidEyes);},"Nonfinite right-eye intrinsics accepted");
+    Require(live_pair::Read32(h.consumer_pid)==0,"Invalid eye intrinsics claimed stream");
     {
         auto ownedStereo=ConfiguredStereo(gpu,name,eyeWidth,eyeHeight);auto& stereo=*ownedStereo;
         Require(stereo.Width()==h.width&&stereo.Height()==h.height,"source dimensions");
@@ -308,9 +390,12 @@ void Producer(UINT fmt,bool timeout=false,UINT eyeWidth=1280,UINT eyeHeight=720)
 }
 }
 int wmain(int argc,wchar_t** argv) try {
-    if(argc==2&&std::wstring(argv[1])==L"--invalid-resolution") VerifyResolutionValidation();
+    if(argc==2&&std::wstring(argv[1])==L"--shader-isolation") VerifyShaderIsolation();
+    else if(argc==2&&std::wstring(argv[1])==L"--nonfinite-projection") VerifyNonfiniteProjection();
+    else if(argc==2&&std::wstring(argv[1])==L"--invalid-resolution") VerifyResolutionValidation();
     else if(argc==7&&(std::wstring(argv[1])==L"--worker"||std::wstring(argv[1])==L"--worker-timeout")) { fixtureProfile=UINT(std::stoul(argv[6]));Worker(argv[2],argv[3],std::wstring(argv[1])==L"--worker-timeout",UINT(std::stoul(argv[4])),UINT(std::stoul(argv[5]))); }
     else if(argc==2&&std::wstring(argv[1])==L"--projection-contract") { for(fixtureProfile=1;fixtureProfile<=4;++fixtureProfile) Producer(28); }
+    else if(argc==2&&std::wstring(argv[1])==L"--eye-projections") { for(fixtureProfile=5;fixtureProfile<=9;++fixtureProfile) Producer(28); }
     else if(argc==2&&std::wstring(argv[1])==L"--timeout") Producer(28,true);
     else if(argc==2&&std::wstring(argv[1])==L"--1080p") { Producer(24,false,1920,1080);Producer(28,false,1920,1080);Producer(87,false,1920,1080); }
     else if(argc==2&&std::wstring(argv[1])==L"--1440p") Producer(28,false,2560,1440);

@@ -6,12 +6,13 @@
 #include <locale>
 #include <sstream>
 #include <stdexcept>
+#include <optional>
 
 namespace reprojection {
 // Row-vector perspective: clip=(fx*x+jx*z, fy*y+jy*z, a*z+b, wsign*z).
 // Device depth is [0,1]. ForwardDistance is w=wsign*z, in game units.
-// Both parallel eyes use THIS SAME projection; jx/jy cancel, fy scales no
-// horizontal displacement. This contract cannot describe asymmetric XR eyes.
+// This reduced depth model omits jx/jy. Identical parallel projections cancel
+// them; explicit destination intrinsics must supply them through RayIntrinsics.
 struct Perspective {
     float fx,fy,a,b,wsign;
     float ForwardDistance(float depth) const { return wsign*b/(wsign*depth-a); }
@@ -44,11 +45,61 @@ struct Perspective {
         Perspective result{m[0],m[5],m[10],m[14],m[11]};result.Validate();return result;
     }
 };
+// Image intrinsics in the source view axes: NDC=(fx*X/w+cx,fy*Y/w+cy).
+// These describe rays only, not destination near/far clipping or eye rotation.
+struct RayIntrinsics {
+    float fx=1,fy=1,cx=0,cy=0,wsign=1;
+    void Validate() const {
+        if(!std::isnormal(fx)||fx<=0||!std::isnormal(fy)||fy<=0||
+           !std::isfinite(cx)||!std::isfinite(cy)||(wsign!=1&&wsign!=-1)||
+           std::fpclassify(cx)==FP_SUBNORMAL||std::fpclassify(cy)==FP_SUBNORMAL)
+            throw std::invalid_argument("Invalid parallel image intrinsics");
+    }
+    static RayIntrinsics FromRowMatrix(const std::array<float,16>& matrix) {
+        const auto p=Perspective::FromRowMatrix(matrix);
+        RayIntrinsics rays{p.fx,p.fy,matrix[8]/p.wsign,matrix[9]/p.wsign,p.wsign};
+        rays.Validate();return rays;
+    }
+    void WriteJson(std::ostream& out) const {
+        out<<"{\"fx\":"<<fx<<",\"fy\":"<<fy<<",\"cx_ndc\":"<<cx<<",\"cy_ndc\":"<<cy<<",\"wsign\":"<<wsign<<"}";
+    }
+    bool Same(const RayIntrinsics& other) const {
+        return fx==other.fx&&fy==other.fy&&cx==other.cx&&cy==other.cy&&wsign==other.wsign;
+    }
+};
+struct PixelTransform {
+    float scaleX=1,scaleY=1,offsetX=0,offsetY=0;
+    bool Identity() const { return scaleX==1&&scaleY==1&&offsetX==0&&offsetY==0; }
+    void Validate() const {
+        if(!std::isnormal(scaleX)||scaleX<=0||!std::isnormal(scaleY)||scaleY<=0||
+           !std::isfinite(offsetX)||!std::isfinite(offsetY)||
+           std::fpclassify(offsetX)==FP_SUBNORMAL||std::fpclassify(offsetY)==FP_SUBNORMAL)
+            throw std::invalid_argument("Image intrinsics transform outside supported float32 range");
+    }
+};
+struct ParallelEyeProjections {
+    RayIntrinsics source;
+    std::array<RayIntrinsics,2> target;
+    PixelTransform Transform(unsigned eye) const {
+        if(eye>1) throw std::invalid_argument("Eye must be 0 or 1");
+        source.Validate();target[eye].Validate();
+        if(source.wsign!=target[eye].wsign) throw std::invalid_argument("Parallel image intrinsics must share view axes/W sign");
+        const double sx=double(target[eye].fx)/source.fx,sy=double(target[eye].fy)/source.fy;
+        PixelTransform result{float(sx),float(sy),float(target[eye].cx-sx*source.cx),float(target[eye].cy-sy*source.cy)};
+        result.Validate();return result;
+    }
+    void Validate(const Perspective& model) const {
+        if(source.fx!=model.fx||source.fy!=model.fy||source.wsign!=model.wsign)
+            throw std::invalid_argument("Image source intrinsics disagree with depth calibration");
+        Transform(0);Transform(1);
+    }
+};
 enum class CalibrationProvenance { LegacyAc6Observation, ExplicitUnassociated };
 // Static consumer configuration, NOT per-frame metadata and NOT a wire format.
 struct ProjectionCalibration {
     Perspective model;
     CalibrationProvenance provenance;
+    std::optional<ParallelEyeProjections> eyeProjections;
     static ProjectionCalibration LegacyObservedAc6() {
         // PROJECTION_FINDINGS.md: helper observations on 2026-10-16, separate
         // from the color/depth interval. No claim these match a current frame.
@@ -56,18 +107,33 @@ struct ProjectionCalibration {
     }
     void Validate() const {
         model.Validate();
+        if(eyeProjections) {
+            eyeProjections->Validate(model);
+            if(provenance!=CalibrationProvenance::ExplicitUnassociated)
+                throw std::invalid_argument("Distinct eye intrinsics require an explicit unassociated source calibration");
+        }
         if(provenance==CalibrationProvenance::ExplicitUnassociated) return;
         const auto legacy=LegacyObservedAc6().model;
         if(provenance!=CalibrationProvenance::LegacyAc6Observation||model.fx!=legacy.fx||model.fy!=legacy.fy||
            model.a!=legacy.a||model.b!=legacy.b||model.wsign!=legacy.wsign)
             throw std::invalid_argument("Invalid projection provenance or altered legacy calibration");
     }
+    PixelTransform Transform(unsigned eye) const {
+        if(eye>1) throw std::invalid_argument("Eye must be 0 or 1");
+        return eyeProjections?eyeProjections->Transform(eye):PixelTransform{};
+    }
     std::string Json() const {
         Validate();
         std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(std::numeric_limits<float>::max_digits10);
         out<<"{\"provenance\":\""<<(provenance==CalibrationProvenance::LegacyAc6Observation?"ac6_helper_observation_2026_10_16":"explicit_unassociated_calibration")
-           <<"\",\"frame_associated\":false,\"same_projection_parallel_eyes\":true,\"metric_scale_calibrated\":false,\"fx\":"<<model.fx
-           <<",\"fy\":"<<model.fy<<",\"a\":"<<model.a<<",\"b\":"<<model.b<<",\"wsign\":"<<model.wsign<<"}";
+           <<"\",\"frame_associated\":false,\"same_projection_parallel_eyes\":"<<(!eyeProjections||(eyeProjections->source.Same(eyeProjections->target[0])&&eyeProjections->source.Same(eyeProjections->target[1]))?"true":"false")<<",\"metric_scale_calibrated\":false,\"fx\":"<<model.fx
+           <<",\"fy\":"<<model.fy<<",\"a\":"<<model.a<<",\"b\":"<<model.b<<",\"wsign\":"<<model.wsign;
+        if(eyeProjections) {
+            out<<",\"image_intrinsics\":{\"source\":";eyeProjections->source.WriteJson(out);
+            out<<",\"left\":";eyeProjections->target[0].WriteJson(out);
+            out<<",\"right\":";eyeProjections->target[1].WriteJson(out);out<<"}";
+        }
+        out<<"}";
         return out.str();
     }
 };

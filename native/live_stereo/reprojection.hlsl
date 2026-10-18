@@ -4,6 +4,7 @@ cbuffer Params : register(b0) {
     float eyeX;
     uint tw, th;
     float fx, a, b, wsign;
+    float scaleX, scaleY, offsetX, offsetY;
 };
 ByteAddressBuffer source : register(t0);
 RWByteAddressBuffer closest : register(u0);
@@ -20,7 +21,11 @@ bool Project(uint index,out uint target,out uint depthKey) {
     if(index>=sw*sh) return false;
     float d=asfloat(source.Load(depthOffset+(index/sw)*depthPitch+(index%sw)*4));
     if(!isfinite(d)||d<0||d>1) return false;
+#ifdef AC6_DISTINCT_INTRINSICS
+    return ProjectParallel(index,sw,sh,tw,th,d,fx,a,b,wsign,eyeX,float4(scaleX,scaleY,offsetX,offsetY),target,depthKey);
+#else
     return ProjectParallel(index,sw,sh,tw,th,d,fx,a,b,wsign,eyeX,target,depthKey);
+#endif
 }
 [numthreads(256,1,1)]
 void DepthPass(uint3 tid : SV_DispatchThreadID) {
