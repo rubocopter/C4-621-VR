@@ -263,3 +263,21 @@ La primera persona ya está probada por el usuario y Depth of Field ya está des
   explícita cuando no se configura su ejecutable.
 - Evidencia y comandos en `docs/DEPTH_REFERENCE_PRECISION.md`. Ninguna afirmación
   nueva de calidad visual, rendimiento, escala métrica o comodidad en PSVR2.
+
+## 2026-10-18 — frusta asimétricos y FOV por ojo, solo host
+
+- Base `d819ef6`, rama `codex/asymmetric-frustum-20261018`. API de conversión
+  de bordes firmados o ángulos en radianes a intrínsecos, sin asumir centro
+  óptico simétrico. Se validan orden, dominio angular, spans y rango float32
+  antes de estrechar; no se adquieren datos nuevos del juego o del visor.
+- Ocho perfiles nuevos recorren el consumidor GPU real: cuatro modelos de
+  profundidad/ejes, en entradas por pendientes y por ángulos float32. Oracle
+  independiente por interpolación de bordes, previews y blits exactos.
+- Tests escritos antes de implementar ambos conversores, compilación RED por
+  API ausente. Una mutación aislada que fuerza cx=cy=0 falla en CPU y GPU;
+  la GPU detecta píxel2560/frame3/ojo0. El checkout nunca contiene esa mutación.
+- Suite live completa de 11 CTests correcta tras la primera conversión; después
+  pasan el contrato CPU y el nuevo test de radianes. Python: 40 correctos y un
+  test GPU offline omitido explícitamente. Detalles en el contrato de intrínsecos.
+- Shader, rutas de producción, protocolos y defaults intactos. Sin AC6,
+  SteamVR, OpenXR ni ensayo físico; no se declara una mejora visual.

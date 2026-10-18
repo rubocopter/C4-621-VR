@@ -265,6 +265,12 @@ numéricos](docs/DEPTH_REFERENCE_PRECISION.md). Se reproduce selección CPU inco
 por distancias float64 redondeadas iguales y se compara con GPU real sin cambiar
 el shader, la presentación ni las protecciones del stream.
 
+Preparación posterior, solo host: [conversión de frusta asimétricos a intrínsecos](docs/EYE_PROJECTION_CONTRACT.md#conversión-de-frusta-asimétricos--continuación-del-18-10-2026),
+conservando puntos principales, validación de rango y ocho perfiles del
+consumidor GPU (cuatro por pendientes y cuatro por ángulos firmados en radianes)
+contrastados contra interpolación independiente de bordes.
+No incorpora datos nuevos de AC6 ni activa un modo de presentación.
+
 ## Desarrollo de presentación binocular: historial de la fase inicial
 
 ### Prueba de escena fija en PSVR2
