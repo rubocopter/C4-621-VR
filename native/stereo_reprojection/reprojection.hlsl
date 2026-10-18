@@ -22,19 +22,7 @@ bool Project(uint index, out uint target, out uint depthKey) {
     target=0; depthKey=0;
     if (index >= sw*sh) return false;
     float d=asfloat(depth.Load(4*index));
-    if (!isfinite(d) || d<0 || d>1) return false;
-    float distance=wsign*b/(wsign*d-a);
-    if (!isfinite(distance) || distance<=0) return false;
-    // Same projection for both parallel cameras: principal-point jitter cancels.
-    float px=((index%sw)+0.5)*tw/sw - fx*eyeX*tw/(2*distance);
-    float py=((index/sw)+0.5)*th/sh;
-    if (!isfinite(px) || px<0.0 || px>=(float)tw || py<0.0 || py>=(float)th) return false;
-    target=(uint)floor(py)*tw+(uint)floor(px);
-    // Order by original device depth, preserving adjacent float depth samples.
-    // d(distance)/d(deviceDepth) has sign -b for either forward-Z sign.
-    uint rawDepth=asuint(d)&0x7fffffffu; // Treat negative zero as zero.
-    depthKey=b>0.0 ? 0x3f800000u-rawDepth : rawDepth;
-    return true;
+    return ProjectParallel(index,sw,sh,tw,th,d,fx,a,b,wsign,eyeX,target,depthKey);
 }
 
 [numthreads(256,1,1)]

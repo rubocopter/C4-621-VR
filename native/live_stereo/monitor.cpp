@@ -45,6 +45,6 @@ int wmain(int argc,wchar_t** argv) try {
         } else Sleep(1);
     }
     if(count) stream.SavePreview(std::wstring(argv[3])+L"-last");
-    std::cout<<"{\"frames\":"<<count<<",\"first_id\":"<<first<<",\"last_id\":"<<stream.FrameId()<<",\"width\":"<<stream.Width()<<",\"height\":"<<stream.Height()<<",\"production_cpu_readback\":false,\"eye_width\":"<<stream.EyeWidth()<<",\"eye_height\":"<<stream.EyeHeight()<<"}\n";
+    std::cout<<"{\"frames\":"<<count<<",\"first_id\":"<<first<<",\"last_id\":"<<stream.FrameId()<<",\"width\":"<<stream.Width()<<",\"height\":"<<stream.Height()<<",\"production_cpu_readback\":false,\"eye_width\":"<<stream.EyeWidth()<<",\"eye_height\":"<<stream.EyeHeight()<<",\"projection\":"<<stream.Calibration().Json()<<"}\n";
     return count>2?0:2;
 } catch(const std::exception& e) { std::cerr<<e.what()<<'\n';return 1; }

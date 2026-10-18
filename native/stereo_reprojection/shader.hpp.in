@@ -1,2 +1,3 @@
 #pragma once
-constexpr char shader_source[]=R"shader(@REPROJECTION_HLSL@)shader";
+constexpr char shader_source[]=R"shader(@PARALLEL_PROJECTION_HLSL@
+@REPROJECTION_HLSL@)shader";

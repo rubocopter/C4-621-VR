@@ -200,3 +200,117 @@ La primera persona ya está probada por el usuario y Depth of Field ya está des
 - Pasadas V9/A720p25°, V10/B1080p90° y V11/C1440p90°, todas 27 s visibles y 15 s de seguimiento en PID30252, misión offline cooperativa confirmada. A: 1128 frames visibles/1110 actualizaciones; B: 2304/2152; C: 2287/2170. Cero pérdidas/fuentes descartadas, todos los procesos código0, hooks/prologue restaurados. Juego siguió respondiendo; sin cambios en archivos del juego ni configuración SteamVR.
 - B confirmó mayor giro, sin mejora clara de definición ni duplicación/deformación apreciable. Consulta OpenXR de solo lectura recomendó 2804×2860 por ojo para la vista completa; se conservó SteamVR tal como estaba. C usa salida2560×1440 igual al tamaño fuente y mantiene90°: el usuario respondió «Se veía más claro y sin tirones apreciables». Se registra como perfil de referencia explícito; defaults conservados para compatibilidad.
 - Intervalo medio A24.009254 ms, B11.749987 ms, C11.833966 ms. También hubo picos: Cmáximo72.3932 ms. No se atribuye causalmente esa variación a resolución ni se declara fluidez sostenida/latencia validada. Dos revisiones independientes sin bloqueantes; documentación y comandos en `QUALITY_PACING_FINDINGS.md`. Quedan proyecciones asimétricas, escala y ensayos prolongados.
+
+## 2026-10-18 — contrato estático de proyección, sesión autónoma sin juego
+
+- Base real `fecfd27`, checkout limpio; rama `codex/projection-contract-20261018`.
+  Builds nuevas bajo `out/geometry-20261018`; no se inició AC6/SteamVR/OpenXR,
+  no se inyectaron DLLs ni se modificaron archivos del juego o binarios previos.
+- RED reproducido: consumidor fijo contra perspectiva sintética (píxel 2587,
+  frame3/ojo0) y validación offline que aceptaba polos interiores/semiespacio
+  incorrecto. Se implementa contrato común, calibración inmutable del consumidor
+  y HLSL compartido; cuatro modelos alternativos pasan por la GPU real.
+- El perfil observado y baseline0.5 siguen por defecto. Logs del monitor/XR
+  identifican coeficientes y procedencia sin atribuirlos a un frame. Mapping
+  v1/120 bytes y archivo offline/48 bytes intactos; ningún hook nuevo ni gate
+  relajado. Matriz/cámara/jitter por fotograma continúan pendientes de evidencia.
+- Pruebas: 28 Python, siete CTests del consumidor, 25 casos internos GPU offline,
+  cinco CTests del presentador y suites anteriores. Detalles y comandos en
+  `PROJECTION_FINDINGS.md`; no se declara mejora visual ni temporal en visor.
+- La revisión independiente identificó aceptación de distancias subnormales
+  que SM5 puede llevar a cero. Regresión host RED, restricción de coeficientes
+  y distancias a valores normales (salvo polo infinito), y verificación de las
+  rutas afectadas. Perfil histórico intacto.
+
+## 2026-10-18 — después de validar PR #4: intrínsecos por ojo, solo host
+
+- Tras autorización del usuario se probó `8b8ee37` en PSVR2/PID6796, misión
+  offline, perfil2560×1440/90°. Tres procesos código0, hooks restaurados y
+  valoración del usuario correcta. La evidencia y sus límites se registran en
+  `PROJECTION_FINDINGS.md`; el PR #4 permanece abierto y sin modificaciones.
+- Se continúa en `codex/eye-projection-20261018`, con calibración opcional de
+  intrínsecos fuente/destino por ojo conectada al consumidor GPU y referencia
+  NumPy. Modo desactivado por defecto y sin selector XR ni protocolo nuevo.
+- Regresión GPU observada antes del cambio: píxel2664/frame3/ojo0 discrepante
+  con reconstrucción independiente. Se añade transformación de rayos con
+  validación de procedencia/ejes/rango float32 y rama identidad conservadora.
+  Detalles, pruebas y límites en `docs/EYE_PROJECTION_CONTRACT.md`.
+- Revisión: se añadió rechazo explícito de Y no finita antes de convertir a
+  índice. RED observado en GPU con helper IEEE estricto/sin optimización;
+  el fixture de reproducción usa exclusivamente una dirección de salida fija.
+- Se aísla también la compilación del modo opcional: reflexión DXBC RED→GREEN
+  verifica ausencia de lecturas de sus constantes en el shader por defecto.
+  Se conserva el límite de frescura de 500 ms; una pasada de tests 1080p/1440p
+  caducó durante la verificación y se conserva el fallo en los logs locales.
+- Cierre local: 33 pruebas Python, 16 CTests pertinentes y compilación del
+  consumidor, offline y presentador correctos. La última suite completa del
+  consumidor pasa los diez tests. No se ejecutó otro ensayo en el juego/visor.
+
+## 2026-10-18 — precisión de referencias CPU y comparación directa con GPU
+
+- Rama `codex/depth-reference-precision-20261018`, base `5edd130`; los PR #4/#5
+  se conservan abiertos. Sin interacción con AC6/SteamVR ni cambios de shader,
+  consumidor live, presentación o protocolos binarios.
+- RED: dos device depths distintas reconstruyen la misma distancia float64 y
+  las referencias CPU eligen el píxel lejano; la GPU existente elige el cercano.
+  Se usa orden monotónico del depth original según B, con desempate por índice.
+- La referencia de proyección elimina umbrales absolutos de unidades, exige la
+  forma canónica soportada y rechaza resultados no finitos. La clasificación
+  reverse-Z tampoco depende ya de comparar endpoints redondeados.
+- GREEN: 41 tests Python, incluidos 16 fixtures directos Python/GPU/ganador
+  literal, y 37 casos internos GPU con índices/RGBA exactos. Compilación y sintaxis
+  correctas; revisión independiente sin hallazgos. El test GPU se omite de forma
+  explícita cuando no se configura su ejecutable.
+- Evidencia y comandos en `docs/DEPTH_REFERENCE_PRECISION.md`. Ninguna afirmación
+  nueva de calidad visual, rendimiento, escala métrica o comodidad en PSVR2.
+
+## 2026-10-18 — frusta asimétricos y FOV por ojo, solo host
+
+- Base `d819ef6`, rama `codex/asymmetric-frustum-20261018`. API de conversión
+  de bordes firmados o ángulos en radianes a intrínsecos, sin asumir centro
+  óptico simétrico. Se validan orden, dominio angular, spans y rango float32
+  antes de estrechar; no se adquieren datos nuevos del juego o del visor.
+- Ocho perfiles nuevos recorren el consumidor GPU real: cuatro modelos de
+  profundidad/ejes, en entradas por pendientes y por ángulos float32. Oracle
+  independiente por interpolación de bordes, previews y blits exactos.
+- Tests escritos antes de implementar ambos conversores, compilación RED por
+  API ausente. Una mutación aislada que fuerza cx=cy=0 falla en CPU y GPU;
+  la GPU detecta píxel2560/frame3/ojo0. El checkout nunca contiene esa mutación.
+- Suite live completa de 11 CTests correcta tras la primera conversión; después
+  pasan el contrato CPU y el nuevo test de radianes. Python: 40 correctos y un
+  test GPU offline omitido explícitamente. Detalles en el contrato de intrínsecos.
+- Shader, rutas de producción, protocolos y defaults intactos. Sin AC6,
+  SteamVR, OpenXR ni ensayo físico; no se declara una mejora visual.
+
+## 2026-10-18 — frescura del par después de las dos copias
+
+- Base `0202774`, rama `codex/stereo-submit-freshness-20261018`. RED reproducido
+  con reloj simulado: comprobación previa correcta, copia derecha exitosa y
+  edad501 antes del envío; el helper anterior enviaba ambas capas caducadas.
+- Se exige validación final tras liberar ambos ojos. El presentador live-pair
+  comprueba mismo ID, estado/layout y edad500 inclusiva mediante la nueva
+  consulta `HasFreshFrame`, también reutilizada por `TryBlit`. Un rechazo cierra
+  con cero capas e invalida la pose, usando contadores/eventos existentes.
+- GREEN: cinco CTests XR host y doce live con GPU, incluidas fronteras500/501,
+  excepciones y fuente Failed. Revisión independiente sin hallazgos. Comandos
+  y límites en `LIVE_STEREO_FINDINGS.md`; builds/logs nuevos bajo `out/`.
+- No cambia el shader, protocolo, fences, gates de cola, baseline, resolución
+  ni orientación. No se ejecutó AC6/SteamVR/OpenXR. La edad se comprueba en CPU
+  antes de EndFrame; no garantiza la edad física del contenido en el visor.
+
+## 2026-10-18 — aceptación física PR #8 y oráculo de oclusiones live
+
+- Tras dos paradas seguras por múltiples colas en PID19588, el nuevo PID6844
+  completó el ensayo2560x1440/90° con una sola cola, tres procesos código0,
+  hooks restaurados y confirmación visual del usuario. Cambiaron overlay de
+  Steam, Discord y proceso: no se aísla la causa del fallo anterior. Condiciones,
+  contadores y límites registrados en `LIVE_STEREO_FINDINGS.md`.
+- Base `1dc8403`, rama `codex/live-oracle-depth-order-20261018`. El oráculo del
+  fixture live aún comparaba Z reconstruida, aunque las referencias offline
+  ya preservaban device depth. RED CPU literal y GPU (píxel2723/frame4/ojo0).
+- Se corrige solo ese oráculo, por signo de B y desempate de profundidad exacta.
+  Cuatro perfiles de dos procesos verifican el consumidor real con distancias
+  redondeadas iguales. Test CPU sin GPU añadido a CI; comandos y evidencia en
+  `docs/DEPTH_REFERENCE_PRECISION.md`. Producción, shaders y protocolos intactos.
+- GREEN:14 CTests live,40 Python correctos y un test GPU opcional omitido
+  explícitamente; sintaxis/diff correctos. Revisión independiente sin hallazgos.

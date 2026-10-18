@@ -1,2 +1,3 @@
 #pragma once
-inline constexpr char LiveStereoHlsl[]=R"AC6HLSL(@LIVE_STEREO_HLSL@)AC6HLSL";
+inline constexpr char LiveStereoHlsl[]=R"AC6HLSL(@PARALLEL_PROJECTION_HLSL@
+@LIVE_STEREO_HLSL@)AC6HLSL";

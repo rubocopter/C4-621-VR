@@ -6,9 +6,9 @@ from collections import Counter
 def _validate(matrix):
     if len(matrix) != 16 or not all(math.isfinite(v) for v in matrix):
         raise ValueError('Expected 16 finite row-vector matrix coefficients')
-    if any(abs(matrix[i]) > 1e-7 for i in (1, 2, 3, 4, 6, 7, 12, 13, 15)):
+    if any(matrix[i] != 0 for i in (1, 2, 3, 4, 6, 7, 12, 13, 15)):
         raise ValueError('Unsupported perspective shape; orthographic/sheared matrices need a general inverse')
-    if matrix[0] <= 0 or matrix[5] <= 0 or abs(abs(matrix[11]) - 1) > 1e-6 or abs(matrix[14]) < 1e-15:
+    if matrix[0] <= 0 or matrix[5] <= 0 or matrix[11] not in (-1, 1) or matrix[14] == 0:
         raise ValueError('Unsupported perspective scale, W sign or depth coefficient')
 
 
@@ -18,7 +18,9 @@ def inspect_projection(matrix):
     near, far = min(abs(z0), abs(z1)), max(abs(z0), abs(z1))
     if not near > 0 or (math.isfinite(z0) and z0 * matrix[11] <= 0) or (math.isfinite(z1) and z1 * matrix[11] <= 0):
         raise ValueError('Depth range is not in the forward half-space')
-    return dict(reverse_z=abs(z1) < abs(z0), near_game_units=near, far_game_units=far,
+    # d(forwardDistance)/d(deviceDepth) = -Wsign**2 * B / denominator**2.
+    # Endpoint distances may round equal; their comparison can lose the sign.
+    return dict(reverse_z=matrix[14] > 0, near_game_units=near, far_game_units=far,
                 fov_y_degrees=math.degrees(2 * math.atan(1 / matrix[5])),
                 fov_x_degrees=math.degrees(2 * math.atan(1 / matrix[0])),
                 aspect=matrix[5] / matrix[0], forward_z_sign=matrix[11],
@@ -32,9 +34,12 @@ def view_z_from_depth(matrix, depth):
     if not math.isfinite(depth) or not 0 <= depth <= 1:
         raise ValueError('Device depth must be finite and within [0, 1]')
     denominator = matrix[11] * depth - matrix[10]
-    if abs(denominator) < 1e-15:
+    if denominator == 0:
         return math.copysign(math.inf, matrix[11])
-    return matrix[14] / denominator
+    z = matrix[14] / denominator
+    if not math.isfinite(z) or z == 0:
+        raise ValueError('Finite-depth reconstruction is outside the representable range')
+    return z
 
 
 def unproject_ndc(matrix, x, y, depth):
@@ -44,7 +49,10 @@ def unproject_ndc(matrix, x, y, depth):
     if not math.isfinite(z):
         raise ValueError('A depth pole represents a direction, not a finite view-space point')
     w = matrix[11] * z
-    return ((x * w - matrix[8] * z) / matrix[0], (y * w - matrix[9] * z) / matrix[5], z)
+    point = ((x * w - matrix[8] * z) / matrix[0], (y * w - matrix[9] * z) / matrix[5], z)
+    if not all(math.isfinite(value) for value in point):
+        raise ValueError('Unprojected point is outside the finite representable range')
+    return point
 
 
 def project_view(matrix, point):
@@ -53,11 +61,14 @@ def project_view(matrix, point):
         raise ValueError('Expected a finite 3D point')
     x, y, z = point
     w = matrix[11] * z
-    if abs(w) < 1e-15:
+    if w == 0:
         raise ValueError('Point lies at the perspective divide')
-    return ((matrix[0] * x + matrix[8] * z) / w,
-            (matrix[5] * y + matrix[9] * z) / w,
-            (matrix[10] * z + matrix[14]) / w)
+    projected = ((matrix[0] * x + matrix[8] * z) / w,
+                 (matrix[5] * y + matrix[9] * z) / w,
+                 (matrix[10] * z + matrix[14]) / w)
+    if not all(math.isfinite(value) for value in projected):
+        raise ValueError('Projected point is outside the finite representable range')
+    return projected
 
 
 def summarize_projection_samples(samples):

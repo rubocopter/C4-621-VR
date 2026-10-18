@@ -147,6 +147,7 @@ struct Probe {
             gpu_capture=std::make_unique<GpuWindowBridge>(pid,gpu->device.Get(),gpu->queue.Get());
         } else if(pid) capture=std::make_unique<WindowCapture>(pid,gpu->adapter.Get());
         if(tracking) publisher=std::make_unique<PosePublisher>(pid,options.rotation_limit);
+        if(pair_stream) Event("{\"kind\":\"projection_calibration\",\"projection\":"+pair_stream->Calibration().Json()+"}");
         Event("{\"kind\":\"metadata\",\"runtime\":"+Quote(runtime.runtimeName)+",\"system\":"+Quote(properties.systemName)+
             ",\"graphics\":\"D3D12\",\"mode\":"+Quote(pair_stream?"live_depth_reprojected_pair_quad":static_stereo?"static_depth_reprojected_pair_quad":pid?"game_window_quad":"per_eye_pattern_quad")+
             ",\"game_pid\":"+std::to_string(pid)+",\"width\":"+std::to_string(options.eye_width)+",\"height\":"+std::to_string(options.eye_height)+",\"format\":"+std::to_string(format)+
@@ -257,6 +258,7 @@ struct Probe {
             XrCompositionLayerQuad layers[2]={{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}};
             const XrCompositionLayerBaseHeader* bases[2]={reinterpret_cast<XrCompositionLayerBaseHeader*>(&layers[0]),reinterpret_cast<XrCompositionLayerBaseHeader*>(&layers[1])};
             const bool eligible=frame.shouldRender && centered && fresh;
+            const auto source_frame_id=pair_stream?pair_stream->FrameId():0;
             std::array<std::uint32_t,2> indices{};
             const auto stereo_start=Clock::now();
             const bool visible=PresentStereoFrame(eligible,
@@ -287,6 +289,11 @@ struct Probe {
                 [&](unsigned eye) {
                     XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
                     XCheck(xr.ReleaseSwapchainImage(chains[eye],&release),"xrReleaseSwapchainImage");
+                },
+                [&] {
+                    // The second copy/release may outlive the source's 500ms
+                    // budget or observe a producer failure. Submit both or none.
+                    return !pair_stream || (pair_stream->FrameId()==source_frame_id&&pair_stream->HasFreshFrame());
                 },
                 [&](bool ready) {
                     const auto end_start=Clock::now();

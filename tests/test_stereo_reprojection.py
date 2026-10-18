@@ -16,6 +16,113 @@ def device_depth(distance):
 
 
 class StereoReprojectionTests(unittest.TestCase):
+    def test_occlusion_order_survives_collapsed_reconstructed_distances(self):
+        # Both Z values round to 1 in float64. Their original device depths
+        # still distinguish the nearest point; target centers are .25/.75.
+        color = np.array([[[255, 0, 0], [0, 255, 0]]], dtype='uint8')
+        for sign in (-1, 1):
+            for reverse in (False, True):
+                m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+                     (-1e20 if reverse else 1e20) * sign, sign,
+                     0, 0, 1e20 if reverse else -1e20, 0]
+                for values in ((.25, .75), (.75, .25)):
+                    result = reproject_eye(color, np.array([values], dtype='float32'), m, 0, (1, 1))
+                    expected = values.index(max(values) if reverse else min(values))
+                    self.assertEqual(result['source_index'][0, 0], expected)
+                    np.testing.assert_array_equal(result['color'][0, 0], color[0, expected])
+
+    def test_distinct_eye_intrinsics_match_full_matrix_projection(self):
+        color = np.ones((4, 16, 3))
+        for sign in (-1, 1):
+            for reverse in (False, True):
+                src = np.array([1, 0, 0, 0, 0, 2, 0, 0,
+                                .125 * sign, -.25 * sign,
+                                (-1 if reverse else 2) * sign, sign,
+                                0, 0, 2 if reverse else -2, 0], dtype='float64')
+                for size in ((16, 4), (8, 2), (32, 8)):
+                    for eye_x in (-.25, 0, .25):
+                        dst = src.copy()
+                        dst[0], dst[5] = 1.5, 1
+                        dst[8], dst[9] = (.0625 if eye_x < 0 else -.0625) * sign, .125 * sign
+                        depth = np.full((4, 16), np.nan)
+                        depth[1, 7] = .375
+                        point = np.array([2 * 7.5 / 16 - 1, 1 - 2 * 1.5 / 4, .375, 1]) @ np.linalg.inv(src.reshape(4, 4))
+                        point /= point[3]
+                        point[0] -= eye_x
+                        clip = point @ dst.reshape(4, 4)
+                        ndc = clip / clip[3]
+                        tx = int(np.floor((ndc[0] + 1) * size[0] / 2))
+                        ty = int(np.floor((1 - ndc[1]) * size[1] / 2))
+                        expected = np.full((size[1], size[0]), -1)
+                        if 0 <= tx < size[0] and 0 <= ty < size[1]:
+                            expected[ty, tx] = 23
+                        result = reproject_eye(color, depth, src.tolist(), eye_x, size, target_matrix=dst.tolist())
+                        np.testing.assert_array_equal(result['source_index'], expected)
+
+    def test_target_projection_rejects_opposite_axes_and_invalid_matrix(self):
+        color, depth = np.ones((2, 4, 3)), np.ones((2, 4))
+        invalid = matrix()
+        invalid[8] = float('nan')
+        for target in (matrix(-1), invalid):
+            with self.assertRaises(ValueError):
+                reproject_eye(color, depth, matrix(), 0, target_matrix=target)
+
+    def test_explicit_identity_intrinsics_preserve_legacy_pixel_boundaries(self):
+        color = np.ones((2, 8, 3))
+        depth = np.linspace(.1, .9, 16).reshape(2, 8)
+        for sign in (-1, 1):
+            src = matrix(sign, (.001, -.002))
+            for eye in (-.25, 0, .25):
+                implicit = reproject_eye(color, depth, src, eye, (16, 4))
+                explicit = reproject_eye(color, depth, src, eye, (16, 4), target_matrix=list(src))
+                np.testing.assert_array_equal(explicit['source_index'], implicit['source_index'])
+
+    def test_distinct_intrinsics_preserve_occlusion_and_explicit_holes(self):
+        color = np.ones((1, 8, 3))
+        depth = np.full((1, 8), np.nan)
+        depth[0, 2], depth[0, 3] = device_depth(4), device_depth(1)
+        target = matrix()
+        target[0], target[5], target[8] = .5, .5, .125
+        result = reproject_eye(color, depth, matrix(), .25, target_matrix=target)
+        self.assertEqual(result['valid'].sum(), 1)
+        self.assertEqual(result['source_index'][0, 3], 3)
+        target[8] = 10
+        outside = reproject_eye(color, depth, matrix(), .25, target_matrix=target)
+        self.assertTrue((outside['source_index'] == -1).all())
+
+    def test_unrepresentable_intrinsics_transform_is_rejected(self):
+        src, dst = matrix(), matrix()
+        src[0], dst[0] = 1e-300, 1e300
+        with self.assertRaises(ValueError):
+            reproject_eye(np.ones((1, 8, 3)), np.ones((1, 8)), src, 0, target_matrix=dst)
+
+    def test_parallel_shortcut_matches_full_matrix_inverse_with_principal_offsets(self):
+        # Independent 4x4 inverse/multiply oracle; catches sign, half-pixel and
+        # target-size errors without reusing the shortcut's depth formula.
+        color = np.ones((4, 16, 3))
+        for sign in (-1, 1):
+            for reverse in (False, True):
+                m = np.array([1.25, 0, 0, 0, 0, 1.5, 0, 0,
+                              .125 * sign, -.25 * sign,
+                              (-1 if reverse else 2) * sign, sign,
+                              0, 0, 2 if reverse else -2, 0], dtype='float64')
+                for size in ((16, 4), (8, 2), (32, 8)):
+                    for eye_x in (-.25, 0, .25):
+                        depth = np.full((4, 16), np.nan)
+                        depth[1, 7] = .375
+                        ndc = np.array([2 * 7.5 / 16 - 1, 1 - 2 * 1.5 / 4, .375, 1])
+                        point = ndc @ np.linalg.inv(m.reshape(4, 4))
+                        point /= point[3]
+                        point[0] -= eye_x
+                        projected = point @ m.reshape(4, 4)
+                        projected /= projected[3]
+                        tx = int(np.floor((projected[0] + 1) * size[0] / 2))
+                        ty = int(np.floor((1 - projected[1]) * size[1] / 2))
+                        result = reproject_eye(color, depth, m.tolist(), eye_x, size)
+                        expected = np.full((size[1], size[0]), -1)
+                        expected[ty, tx] = 23
+                        np.testing.assert_array_equal(result['source_index'], expected)
+
     def test_zero_offset_upscale_is_independent_of_depth(self):
         expected = np.full((2, 16), -1)
         expected[1, 1::2] = np.arange(8)

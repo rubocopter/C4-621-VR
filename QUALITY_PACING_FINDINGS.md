@@ -78,3 +78,13 @@ Consulta de solo lectura a OpenXR, sin crear sesión, con el mismo nombre de apl
 Al comparar claridad y tirones con B, el usuario respondió «Se veía más claro y sin tirones apreciables». Se adopta como perfil de referencia explícito para pruebas posteriores; el mayor rango ya se había confirmado en B. No se convierten esos comentarios en una garantía de fluidez: C también registró un intervalo máximo de 72.3932 ms y EndFrame máximo de 70.6284 ms. Quedan por medir sesiones prolongadas, tiempos GPU y latencia perceptual; la escala y proyecciones por ojo siguen sin calibrar.
 
 No se modifica la calibración empírica de baseline, escala ni proyecciones OpenXR.
+
+## Corrección posterior de disponibilidad al enviar, solo host
+
+La [comprobación final del par](LIVE_STEREO_FINDINGS.md#frescura-al-enviar-el-par--corrección-host-del-18-10-2026)
+rechaza una fuente que caduca o falla después de la última copia/liberación,
+antes de EndFrame. Mantiene el presupuesto de 500 ms y la instrumentación
+existente; los descartes tardíos se cuentan como `source_discarded_during_frame`.
+No se han vuelto a medir los tiempos anteriores ni se atribuye una mejora de
+pacing o latencia a este cambio. Las esperas del runtime posteriores a la
+consulta siguen fuera de esa comprobación de edad.

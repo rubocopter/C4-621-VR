@@ -20,6 +20,15 @@ La integración OpenXR usa capas quad como la prueba fija: LOCAL, 2 m, 2.4×1.35
 
 ## Verificación antes del visor
 
+**Actualización host, 18-10-2026:** el consumidor ya recibe una calibración
+estática validada y usa la misma función HLSL de proyección que el offline.
+Se verifican cuatro modelos alternativos con GPU real, sin habilitarlos en el
+presentador. El perfil histórico sigue por defecto, ahora registrado con
+procedencia y `frame_associated:false`. No cambia el protocolo v1 de 120 bytes,
+baseline, frescura, fences ni presentación. Véase el
+[contrato y pruebas de proyección](PROJECTION_FINDINGS.md#contrato-de-proyección-verificable-en-host--18-10-2026).
+No se ha añadido una validación física a los ensayos de visor descritos abajo.
+
 - Tres CTests del productor: límites/frescura/propiedad; pares GPU cambiantes con saturación, descarte, reanudación y resize; gate GPU pendiente, envío único, rechazo de color sin depth nuevo y publicación de fallo. El gate observa lotes simulados para comprobar la decisión, y el otro fixture comprueba copias reales.
 - Dos CTests del consumidor: procesos y dispositivos D3D12 separados, formatos/padding, colores/previews/blits exactos, paralaje y oclusión, fences retrasadas, saltos, reconexión, stale/Stopped y terminación acotada en vuelo. Debug layer no disponible en el entorno.
 - Revisión del productor: se corrigió el agotamiento de ledger que dejaba el estado Ready sin capturas. La regresión se observó fallar sin la corrección y pasar con ella. Revisión de gates sin nuevos hallazgos de seguridad.
@@ -96,3 +105,118 @@ PID, versión y tag deben corresponder a la sesión real. El script valida ident
 Para el **siguiente gate de visor**, repetir la invocación anterior con un nombre de DLL nuevo, tag nuevo y `--mode vr`, con visor puesto y SteamVR sin paneles. La imagen dura 20 s desde VISIBLE. **Criterio de éxito:** ambos ojos reciben una escena que cambia al moverse el juego, la profundidad resulta fusionable sin imagen doble y no se observan congelaciones ni fallos de sesión durante la ventana. Conservar el `*-result.json`, `*.jsonl` del presentador y el resumen nativo, junto con una breve descripción literal de lo observado por el usuario (incluidas molestias o defectos); los contadores por sí solos no acreditan comodidad/fusión. `--headtracking` añade la sonda de cámara de 15 s y exige que esta tampoco esté mapeada; no activarla hasta comprobar primero la imagen viva estéreo. Datos del juego, logs y capturas quedan fuera del repositorio.
 
 Referencias primarias: [handles compartidos D3D12 y namespace](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12device-createsharedhandle), [apertura por nombre](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12device-opensharedhandlebyname).
+
+## Frescura al enviar el par — corrección host del 18-10-2026
+
+Base `0202774` (PR #7), rama `codex/stereo-submit-freshness-20261018`.
+La comprobación previa a cada `TryBlit` no cubría el tiempo que tarda la
+última copia GPU y `xrReleaseSwapchainImage`: ambos ojos podían devolver éxito
+y aun así superar los 500 ms antes de construir el envío de dos capas.
+También faltaba comprobar otra vez un fallo del productor en ese intervalo.
+
+Se reproduce con el helper anterior: reloj simulado a edad499 al empezar,
+ambas copias exitosas y edad501 después de la derecha. El test falla con
+`Pair expired during final copy/release was submitted`. No requiere esperas
+reales, GPU bloqueada ni sesión OpenXR.
+
+La transacción queda así:
+
+```text
+acquire/wait L -> copy L -> release L
+acquire/wait R -> copy R -> release R
+validate current source -> EndFrame(two layers or zero)
+```
+
+`PresentStereoFrame` exige ahora un callback de validación final. Se llama
+una sola vez después de ambas liberaciones, exclusivamente si ambas copias
+tuvieron éxito. Una respuesta false descarta ambos ojos; una excepción cierra
+el frame con cero capas antes de propagarse. Los errores y descartes anteriores
+conservan sus liberaciones/cierre; los frames ocultos omiten la nueva consulta.
+
+`LiveStereo::HasFreshFrame()` expone, sin trabajo GPU, las mismas comprobaciones
+que ya usaba `TryBlit`: frame consumido, estado Ready/Stopped, layout inmutable
+y edad no futura de como máximo 500 ms. `TryBlit` reutiliza esa consulta. El
+presentador guarda el ID después de Update y exige que siga siendo el mismo
+en la validación final. En el modo live-pair, un rechazo usa el contador/evento
+existente `source_discarded_during_frame` e invalida la pose publicada. Las rutas
+estáticas y la captura WGC/bridge mantienen su política previa.
+
+### Evidencia y reproducción
+
+- RED determinista observado antes de modificar la implementación.
+- Los cinco CTests del presentador pasan: límites edad500/501, expiración en
+  copia o release derechos, fuente invalidada, orden de liberación, descarte
+  de todo el par, excepción del validador y un único EndFrame.
+- Los doce CTests del consumidor pasan en RTX4070Ti (sin debug layer), incluidos
+  previews/blits exactos, modelos de profundidad, intrínsecos/frusta/FOV,
+  reconexión, caducidad y timeout. El fixture GPU verifica la nueva consulta
+  antes del primer frame, después de consumir, ante Failed y tras caducar.
+- Revisión independiente del diff: sin hallazgos. Logs locales ignorados en
+  `out/stereo-submit-freshness-20261018/`: `submit-expiry-red.log`,
+  `build-green.log`, `xr-green.log`, `live-build.log`, `live-green.log`.
+
+```powershell
+cmake -S native/xr_display_probe -B out/stereo-submit-freshness-20261018/xr_display_probe -G 'Visual Studio 17 2022' -A x64
+cmake --build out/stereo-submit-freshness-20261018/xr_display_probe --config Release --parallel 2
+ctest --test-dir out/stereo-submit-freshness-20261018/xr_display_probe -C Release --output-on-failure --no-tests=error
+cmake -S native/live_stereo -B out/stereo-submit-freshness-20261018/live_stereo -G 'Visual Studio 17 2022' -A x64
+cmake --build out/stereo-submit-freshness-20261018/live_stereo --config Release --parallel 2
+ctest --test-dir out/stereo-submit-freshness-20261018/live_stereo -C Release --output-on-failure --no-tests=error
+```
+
+### Límites
+
+Es una comprobación de disponibilidad en un instante CPU posterior a ambas
+copias/liberaciones. El runtime puede esperar dentro de EndFrame y componer
+después; no garantiza edad en el instante físico de presentación ni impide
+un fallo del productor posterior a la consulta. El tick sigue siendo el de
+publicación del stream, sin asociación nueva de matriz/jitter/cámara al render.
+No añade timestamps GPU, medición de latencia ni sincronización con poses.
+
+No cambia shader, protocolo v1/120 bytes, fences, hooks, límite de 500 ms,
+baseline0.5, presets o rango de orientación. Se mantiene la presentación de
+pares válidos y se rechaza el caso tardío antes admitido. Sin inicio de
+AC6/SteamVR/OpenXR ni prueba física en esta tanda; los resultados de visor
+anteriores pertenecen a sus respectivos builds. No se afirma una mejora visual,
+de rendimiento o comodidad. Próxima regresión física, cuando se retome el visor:
+20 s con 2560x1440/90°, giro lento frente a borde cercano/fondo lejano, comprobar
+escena viva fusionable sin congelación/duplicación; sin forzar bloqueos GPU.
+
+## Regresión física posterior del PR #8 — 18-10-2026
+
+Se probó `1dc8403` a2560x1440/90°, 27s visibles y 15s de seguimiento. Los dos
+intentos iniciales en PID19588, productor v13/v14, activaron la parada por
+múltiples colas antes de ofrecer una prueba visual válida (0 y1 pares). Ambos
+restauraron hooks y quedaron inactivos; no se cargó la sonda de cámara.
+La pila de la segunda cola incluía Steam Overlay y DiscordHook. Esa presencia
+no acredita que Discord tuviera su overlay activo ni aísla quién creó la cola.
+El log de Steam también registró grabación y reinicialización de captura D3D12.
+
+El usuario desactivó Steam Overlay para AC6, cerró Discord y reinició el juego
+en misión offline. En PID6844 no estaba DiscordHook; seguía cargada la DLL de
+Steam. Se usaron productor v15 y cámara calibrada v6 nuevos/no mapeados, con
+el mismo presentador compilado de `1dc8403`. Una cola, 2492 pares y838 descartes
+por backpressure, sin ledger inseguro ni fallo. Presentador:1217 envíos visibles,
+1061 enfocados,1192 actualizaciones,1217 poses válidas, cero pérdidas de captura
+y cero pares descartados durante frame. Cámara:1759 aplicaciones, cero
+excepciones. Los tres procesos terminaron en0, hooks/prólogo restaurados y
+DLLs retenidas inactivas; juego respondiendo.
+
+El usuario confirmó «Sí, todo correcto durante la prueba» a escena viva,
+profundidad fusionable sin imagen doble/congelación y giro de cabeza correcto
+al comparar borde cercano y fondo lejano. Se registra aceptación subjetiva
+acotada del PR #8. No se forzó caducidad en el visor: el rechazo tardío concreto
+lo prueban los tests deterministas, no esta pasada sin descartes.
+
+La segunda cola no se reprodujo en esta nueva sesión; su causa no está aislada,
+porque se cambiaron varias condiciones a la vez. La política de parada sigue
+intacta. Intervalo CPU medio23.442012ms, p95 34.6638ms y máximo1560.4146ms,
+incluidas esperas; no se atribuye una mejora de rendimiento/latencia/comodidad.
+Esta aceptación tampoco valida matriz/jitter por frame, escala métrica ni los
+modos opcionales de intrínsecos/FOV asimétricos, que no se activaron.
+
+Evidencia privada en
+`out/psvr2-pr8-19588-v13/evidence/pr8-1440p90-v15-6844-physical-acceptance.json`,
+su `*-result.json`, JSONL y `*-camera.json`. Los intentos bloqueados se conservan
+en `pr8-19588-physical-trial-blocked.json` bajo el mismo directorio. Esta nota
+se registra en la rama posterior; el PR #8 no se modifica ni se fusiona.
