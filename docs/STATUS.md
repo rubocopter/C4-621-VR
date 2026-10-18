@@ -111,7 +111,10 @@ pruebas con GPU local**.
    identificar ese contexto y sus llamadas anidadas al helper. v20 identificó
    un adaptador CPU concreto, pero se detuvo por segunda cola COPY; captura
    rechazada, nueve hooks restaurados y juego respondiendo. Cero muestras
-   del helper dentro del scope; cobertura corregida solo en host/v22.
+   del helper dentro del scope en v20. La repetición presencial v22 en PID
+   nuevo obtuvo 128 muestras dentro de 64 invocaciones CPU, tres pares con
+   procedencia completa, una cola y nueve hooks restaurados. Es identidad
+   de scope CPU, sin asociación de la matriz con esos pares.
    El siguiente forwarding virtual y su uso por GPU siguen sin observarse.
 2. **Geometría del visor y escala:** integrar poses/FOV por ojo, establecer
    unidades/IPD y presentación adecuada; validar físicamente antes de cambiar

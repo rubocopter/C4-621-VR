@@ -1,9 +1,11 @@
 # Del helper de proyección al contexto de render — 18-10-2026
 
 Continuación desde `95467e8`, después de la [observación v18](FRAME_PROJECTION_PROVENANCE.md#verificación-presencial-v18--pid-11284).
-El incremento se probó primero en host. La pasada posterior v20 se registra
-debajo: activó correctamente la parada por segunda cola y no certifica la
-captura. No se ha probado presentación en PSVR2.
+El incremento se probó primero en host. v20 activó correctamente la parada por
+segunda cola y no certifica su captura. La repetición autorizada v22, en otro
+proceso, verificó 128 muestras con identidad de scope CPU y la procedencia de
+tres pares; sigue sin demostrar binding GPU ni proyección por par. Ambas
+pasadas se registran debajo. No se ha probado presentación en PSVR2.
 
 ## Ruta localizada con los callsites de v18
 
@@ -171,19 +173,69 @@ la sonda de proyección sin contexto conservan su admisión anterior.
 Fixture nuevo: 266 llamadas exteriores no consumen la capacidad; una llamada
 dentro del scope conserva su token y publica una muestra. RED de API ausente
 en `scoped-window-red.log`, GREEN de siete CTests en build nuevo
-`out/render-context-20261018/scoped` / DLL v22. Este build **no se ha cargado**.
-Los binarios v17/v18/v20 mapeados permanecen intactos e inactivos.
+`out/render-context-20261018/scoped` / DLL v22. Antes de la confirmación
+presencial, este build no se había cargado. Su posterior ejecución se registra
+debajo. Los binarios v17/v18/v20 se conservaron intactos.
 
-## Única observación mínima pendiente
+## Observación presencial v22 — PID 3228
 
-Después de la parada por segunda cola, requiere una sesión/PID nuevos,
+Después de solicitar un proceso nuevo, el usuario confirmó: «He reiniciado
+AC6 y estoy listo en la misión offline». Se ejecutó una sola ventana de ocho
+segundos con v22, sin capturas auxiliares, visor, consumidor ni seguimiento.
+El loader volvió a verificar ejecutable/hash, módulo cooperativo, ausencia de
+EAC, nombre de DLL no mapeado y prólogo de cámara. Terminó con código 0.
+
+| Observación | Resultado |
+| --- | --- |
+| Captura | 3 pares, 701 descartes por backpressure; una cola DIRECT, sin fallo ni ledger inseguro |
+| Traza | 298 listas retenidas, cierre en envío 138; cero overflow y pares omitidos |
+| Pares | secuencias 1/2/3, slots 0/1/2, copias en envíos 54/82/110; depth/color en índices 1/2 del mismo envío |
+| Contexto CPU | 64 invocaciones completas, 8 escenas y 8 hilos; misma vtable/targets candidatos que v20 |
+| Helper | 128 muestras válidas: exactamente dos por invocación, todas con token CPU resuelto; cero inválidas, overflow o publicación incompleta |
+| Filtro v22 | 430275 llamadas sin token admitido omitidas antes de consumir capacidad |
+| Cierre | nueve hooks restaurados, DLL retenida inactiva, juego respondiendo |
+| Analizador | `capture_provenance_complete:true`, `cpu_context_scope_complete:true`, cero errores; `frame_associated:false`, `missing_raster_binding` |
+
+Las dos llamadas por invocación tienen pilas distintas: retorno directo en
+RVA `0x26e1b47` y vía `0x23a7b5a` / `0x26e1b7d`. Ambas usan jitter habilitado
+y la misma vista dentro de cada scope. Se observaron ocho direcciones de
+vista, con un único modelo numérico: FOV Y `1.55334306`, aspecto `1.77777779`,
+near `1`, far `500000`, dimensiones `2560x1440`, jitter `(-0.25,0.166666687)`.
+No son ocho fotogramas ni ocho cámaras principales demostradas. Las matrices
+iguales y las dos llamadas distintas no permiten seleccionar un draw.
+
+La ventana de 64 invocaciones cubre solo 0.2389 ms. Todas las muestras del
+helper preceden al primer envío retenido; no se ejercitó un cambio de FOV o
+jitter entre fotogramas. El contador de llamadas sin token incluye scopes
+posteriores al límite de 64, enmascarados a cero; no significa que todas
+pertenezcan a otro camino de render. La captura y el helper tienen identidades
+verificadas por separado, **sin enlace entre ambas**. No se relajan las
+condiciones tras el rechazo de v20; una cola en v22 tampoco explica la causa
+de la segunda cola de aquella pasada.
+
+Evidencia privada:
+
+- `evidence/render-context-v22-3228-loader.json`
+- `evidence/render-context-v22-3228-analysis.json`
+- `evidence/render-context-v22-3228-observation.json`
+- `out/render-context-20261018/scoped/Release/live_pair_probe_v22_3228.jsonl`
+
+SHA-256 DLL: `e6fa7f961f07a9598a822b29d8b9cb311f207d118a6cf7775d22f9e6d0be64b4`.
+SHA-256 JSONL: `3dd9fc351602dbd18bd49525abdf50a208b2bdcb05acd3710fc92c694578e4c4`.
+La CI de `f4c4163` terminó correcta. No se recompila ni sobrescribe la DLL
+v22 ahora mapeada; tampoco las anteriores.
+
+### Procedimiento v22 completado
+
+Después de la parada por segunda cola se requirió una sesión/PID nuevos,
 presencia del usuario y confirmación actual de misión cooperativa offline.
-Ocho segundos sin visor/consumidor/seguimiento, girando suavemente
-con mando. El loader debe volver a comprobar ejecutable/hash, módulos y nombre
-de DLL nuevo/no mapeado. No recargar v17/v18, no usar matchmaking y no iniciar
-AC6/SteamVR automáticamente. Si cambia la identidad, se rechaza el ensayo.
+Se indicó una ventana de ocho segundos sin visor/consumidor/seguimiento,
+girando suavemente con mando. El loader volvió a comprobar ejecutable/hash,
+módulos y nombre de DLL nuevo/no mapeado. No se recargaron DLLs anteriores,
+no se usó matchmaking ni se inició AC6/SteamVR automáticamente.
 
-Usar la DLL v22 recién construida, solo tras la confirmación presencial:
+Comandos del procedimiento, conservados como referencia; v22 ya está mapeada
+inactiva en PID 3228 y **no se debe recargar**:
 
 ```powershell
 .venv-analysis/Scripts/python.exe -B tools/load_camera_probe.py --pid <PID-NUEVO> --single-player-confirmed --dll out/render-context-20261018/scoped/Release/ac6_live_pair_probe_v22.dll --no-screenshots --capture evidence/context-new-unused.png --output evidence/context-new-loader.json
@@ -198,7 +250,13 @@ dentro del contexto, el resultado será ausencia de cobertura; no se sustituyen
 muestras por matrices cercanas ni se declara asociación. Si reaparece otra
 cola, detener sin repetir cargas ni eliminar el gate.
 
-La observación permitiría inspeccionar la implementación virtual concreta para
-seguir el upload/binding. Seguirían pendientes el rango/versión de bytes usados
-por GPU, el draw que escribe el depth capturado, viewport y la correspondencia
-con TAA/color final. Esta sonda no supera por sí sola el gate de proyección.
+La cobertura buscada ya se obtuvo: no hace falta repetir v22. El siguiente
+incremento debe seguir el forwarding del adaptador CPU, recogiendo la
+identidad de la interfaz hija y su destino virtual mientras la invocación
+está viva, con comprobación de tipo/layout. Eso exige instrumentación adicional
+acotada y probada en host antes de pedir otra ventana presencial. Leer los
+punteros ahora o repetir la misma sonda no aportaría ese dato.
+
+Siguen pendientes el rango/versión de bytes usados por GPU, el draw que
+escribe el depth capturado, viewport y la correspondencia con TAA/color final.
+Esta sonda no supera por sí sola el gate de proyección.
