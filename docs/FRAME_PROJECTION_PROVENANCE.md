@@ -242,6 +242,10 @@ una proyección sin jitter o una historia TAA anterior no se admiten por su FOV.
 Antes de transportar proyección hará falta ese testigo GPU y rechazo de
 ambigüedad/múltiples vistas por recurso; esta sesión no inventa ese testigo.
 
+Continuación desde los callsites de v18: [paquete de matrices y scope del
+contexto de render](RENDER_CONTEXT_PROVENANCE.md), probado en host y todavía
+sin una nueva ejecución en el juego.
+
 ## Repetición host
 
 ```powershell

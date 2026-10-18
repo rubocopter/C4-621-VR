@@ -106,6 +106,10 @@ pruebas con GPU local**.
    en v18: 3 pares, 214 listas, cero overflow/pares omitidos y fuentes resueltas;
    77 direcciones de vista/11 modelos. Hooks restaurados y juego respondiendo.
    Es procedencia de transiciones, sin binding de matriz por par ni prueba VR.
+   [Continuación host](RENDER_CONTEXT_PROVENANCE.md): localizada la entrega de
+   un paquete CPU a un contexto virtual y preparada sonda opcional para
+   identificar ese contexto y sus llamadas anidadas al helper. No se ha
+   observado todavía su implementación concreta ni uso por GPU.
 2. **Geometría del visor y escala:** integrar poses/FOV por ojo, establecer
    unidades/IPD y presentación adecuada; validar físicamente antes de cambiar
    la ruta por defecto. La preparación host no acredita esas capacidades.
