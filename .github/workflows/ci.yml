@@ -1,0 +1,60 @@
+name: Source validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-native:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python test dependencies
+        run: python -m pip install "numpy>=1.26,<3" "Pillow>=10,<13"
+      - name: Python tests and syntax
+        run: |
+          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Python tests failed' }
+          python -m compileall -q tools tests
+          if ($LASTEXITCODE -ne 0) { throw 'Python syntax check failed' }
+        shell: pwsh
+      - name: Bootstrap pinned headers and MinHook
+        run: ./tools/bootstrap_dependencies.ps1
+        shell: pwsh
+      - name: Build native components (x64 Release)
+        shell: pwsh
+        run: |
+          $projects = @(
+            'camera_probe', 'projection_probe', 'frame_pair_probe',
+            'render_probe', 'live_pair_stream', 'live_stereo',
+            'xr_display_probe', 'stereo_reprojection', 'gpu_capture_bridge'
+          )
+          foreach ($project in $projects) {
+            cmake -S "native/$project" -B "out/ci/$project" -G "Visual Studio 17 2022" -A x64
+            if ($LASTEXITCODE -ne 0) { throw "Configure failed: $project" }
+            cmake --build "out/ci/$project" --config Release --parallel 2
+            if ($LASTEXITCODE -ne 0) { throw "Build failed: $project" }
+          }
+      - name: Run non-GPU native tests
+        shell: pwsh
+        run: |
+          $tests = @{
+            camera_probe = 'yaw_preserves_position_and_rotates_local_basis'
+            projection_probe = 'projection_snapshot_filters_and_preserves'
+            frame_pair_probe = 'pair_ledger_requires_same_recording|pair_failure_is_terminal'
+            live_pair_stream = 'stream_ring_ownership_and_validation'
+            xr_display_probe = 'window_frame_preserves_channels_stride_and_aspect|head_rotation_recenters_clamps_and_uses_local_axes|static_stereo_preserves_eye_order_and_rejects_bad_size|stereo_frame_expiry_releases_both_eyes_and_ends_frame|presentation_settings_and_timing_statistics'
+          }
+          foreach ($project in $tests.Keys) {
+            ctest --test-dir "out/ci/$project" -C Release -R $tests[$project] --output-on-failure --no-tests=error
+            if ($LASTEXITCODE -ne 0) { throw "CTest failed: $project" }
+          }

@@ -1,5 +1,7 @@
 # AC6 en PSVR2: imagen y orientación experimental
 
+> **Estado actualizado (18-10-2026):** el prototipo PSVR2 ya ha demostrado **estéreo continuo reproyectado desde profundidad combinado con orientación de cabeza calibrada**. En una prueba acotada de 2560×1440 por ojo y 90° se observó mayor nitidez y ningún tirón apreciable. Esto no acredita una conversión VR completa ni comodidad prolongada. El estado vigente está en [README.md](README.md), [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) y [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md). Los procedimientos y gates anteriores que siguen a continuación se conservan como historial.
+
 15-10-2026, SteamVR/OpenXR y adaptador oficial PC. Se mostró el juego en el visor y el usuario confirmó seguimiento horizontal/vertical correcto tras calibrar los ejes. Es un diagnóstico temporal monoscópico, no una adaptación VR terminada.
 
 **Actualización posterior:** existe una ruta opcional de captura por GPU, una muestra real de profundidad y una corrección para seguir la cabeza en sesiones VISIBLE sin exigir foco de inputs. Estado y pruebas actuales en `RENDER_CAPTURE_FINDINGS.md`. Las cifras y la política FOCUSED descritas abajo corresponden a los primeros ensayos.
@@ -55,6 +57,6 @@ El cargador comprueba ruta/hash, cooperativo y prólogo del juego, pero la prese
 
 Verificación final: 8 tests Python y 3 tests nativos pasan; sintaxis de `tools/*.py`, ayuda del script y bloqueo de recarga comprobados. `evidence/vr-calibrated-final-audit.json` confirma nuevamente el prólogo original, los módulos diagnósticos y el hash del ejecutable de presentación posterior a la revisión. La comprobación de captura posterior a esa revisión obtuvo 902 capturas y 0 pérdidas, pero ningún frame enfocado; no se cuenta como otra prueba visual. Los dos hallazgos de revisión quedaron resueltos por inspección.
 
-## Trabajo pendiente
+## Trabajo pendiente en esta fase histórica
 
 Acceso al renderer D3D12 del juego para capturar sin la ruta CPU y obtener dos vistas/proyecciones independientes, validando escala y profundidad. Después: ampliar giro, recentrado durante el uso, seguimiento de posición, combate/transiciones, HUD, comodidad y mod persistente. La prueba actual no acredita estas capacidades.

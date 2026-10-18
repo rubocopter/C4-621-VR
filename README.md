@@ -31,6 +31,14 @@ Follow-up trials combined live stereo with head orientation and configurable out
 
 This remains an early experiment: sustained comfort, frame pacing, metric scale, and per-eye OpenXR projections need further work. Sense controller input is not implemented; the game uses its normal PC controls. It is not a complete VR conversion or a public release.
 
+## Source, build and verification
+
+This repository contains the experimental diagnostic source, **not an installer or a public game-ready release**. Developers can use [BUILDING.md](BUILDING.md) for pinned dependencies, supported build commands, safe test gates and the separation between CI and headset validation.
+
+For the latest verified state, start with [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md) and [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md). Several older research notes intentionally preserve the earlier state of the prototype; their historical pending gates are not the current project status.
+
+The project has not yet selected a software license. Armored Core VI and third-party tools remain subject to their respective terms.
+
 ## Project
 
 The work is exploring whether Armored Core VI can become a comfortable, stereoscopic PC VR experience. Next steps are longer validation, measured pacing improvements, and correct eye projections and scale.

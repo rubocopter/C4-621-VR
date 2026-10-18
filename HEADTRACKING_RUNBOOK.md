@@ -1,5 +1,7 @@
 # Prueba acotada de orientación PSVR2
 
+> **Estado actualizado (18-10-2026):** el prototipo PSVR2 ya ha demostrado **estéreo continuo reproyectado desde profundidad combinado con orientación de cabeza calibrada**. En una prueba acotada de 2560×1440 por ojo y 90° se observó mayor nitidez y ningún tirón apreciable. Esto no acredita una conversión VR completa ni comodidad prolongada. El estado vigente está en [README.md](README.md), [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) y [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md). Los procedimientos y gates anteriores que siguen a continuación se conservan como historial.
+
 **Documento histórico del ensayo en monitor.** Para la prueba conjunta dentro del visor y la conversión de ejes corregida, usar `VR_DISPLAY_FINDINGS.md` y `tools/run_vr_trial.py`. La ruta Python de este documento usa `flip_z=false` por defecto y no incorpora automáticamente la calibración posterior.
 
 Resultado del 15-10-2026: el usuario vio que la cámara del juego seguía el visor en el monitor. No se envía imagen al visor. La prueba termina sola; no instala un mod permanente.
