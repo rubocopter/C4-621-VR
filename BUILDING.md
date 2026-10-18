@@ -57,4 +57,4 @@ The current build/research status is in the [README](README.md). Historical expe
 
 ## License
 
-No project license has been selected yet. Do not assume permission to redistribute or relicense this repository's own code. Third-party dependencies retain their respective licenses; AC6 and its assets are not distributed.
+Original project-authored code and tools are under [GPL-3.0-or-later](LICENSE). The [copyright and reuse notice](COPYRIGHT_AND_REUSE.md) excludes game artwork and third-party inputs; each dependency retains its own license. Distribution of covered binaries requires GPL-compliant corresponding-source availability.

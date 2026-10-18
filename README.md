@@ -37,7 +37,7 @@ This repository contains the experimental diagnostic source, **not an installer 
 
 For the latest verified state, start with [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md) and [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md). Several older research notes intentionally preserve the earlier state of the prototype; their historical pending gates are not the current project status.
 
-The project has not yet selected a software license. Armored Core VI and third-party tools remain subject to their respective terms.
+Original project-authored code and research tools are licensed under **[GPL-3.0-or-later](LICENSE)**. See [copyright and third-party scope](COPYRIGHT_AND_REUSE.md). Armored Core VI, artwork and third-party tools retain their own terms.
 
 ## Project
 
