@@ -10,6 +10,7 @@ public:
                reprojection::ProjectionCalibration calibration=reprojection::ProjectionCalibration::LegacyObservedAc6());
     ~LiveStereo();
     bool Update(); // newest shared frame; no CPU pixel readback
+    bool HasFreshFrame() const noexcept; // current publication still usable; no GPU work
     void Blit(ID3D12Resource* xrTarget,DXGI_FORMAT format,unsigned eye);
     bool TryBlit(ID3D12Resource* target,DXGI_FORMAT format,unsigned eye); // false: source expired/unavailable; no GPU work
     UINT64 FrameId() const noexcept;

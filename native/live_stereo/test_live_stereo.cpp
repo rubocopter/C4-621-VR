@@ -318,6 +318,7 @@ void Worker(const std::wstring& name,const std::wstring& prefix,bool timeout,UIN
     Require(live_pair::Read32(h.consumer_pid)==0,"Invalid eye intrinsics claimed stream");
     {
         auto ownedStereo=ConfiguredStereo(gpu,name,eyeWidth,eyeHeight);auto& stereo=*ownedStereo;
+        Require(!stereo.HasFreshFrame(),"A new consumer has no available frame");
         Require(stereo.Width()==h.width&&stereo.Height()==h.height,"source dimensions");
         Require(stereo.EyeWidth()==eyeWidth&&stereo.EyeHeight()==eyeHeight,"configured eye dimensions");
         const auto& calibration=stereo.Calibration();calibration.Validate();
@@ -328,6 +329,11 @@ void Worker(const std::wstring& name,const std::wstring& prefix,bool timeout,UIN
         Require(live_pair::Read32(h.consumer_pid)==LONG(GetCurrentProcessId()),"Failed duplicate cleared live claim");
         SetEvent(done.h);WaitEvent(go.h); // publish only after device/shader setup
         Require(stereo.Update()&&stereo.FrameId()==3,"Newest ready frame 3 not consumed");
+        Require(stereo.HasFreshFrame(),"Just-consumed valid pair must be available");
+        const auto streamStatus=live_pair::Read32(h.status);
+        InterlockedExchange(&h.status,live_pair::Failed);
+        Require(!stereo.HasFreshFrame(),"Producer failure after copy must invalidate the pair");
+        InterlockedExchange(&h.status,streamStatus);
         Require(stereo.CaptureTick()==UINT64(live_pair::Read64(h.slots[2].tick)),"capture tick mismatch");
         Require(!stereo.Update(),"Repeated frame consumed");
         VerifyPreview(stereo,h,3,prefix,eyeWidth,eyeHeight);VerifyBlits(gpu,stereo,h,3,eyeWidth,eyeHeight);SetEvent(done.h);
@@ -337,6 +343,7 @@ void Worker(const std::wstring& name,const std::wstring& prefix,bool timeout,UIN
         Require(stereo.Update()&&stereo.FrameId()==6,"Pending-ready frame 6 not consumed");
         Require(!timeout,"Unsignaled ready fence was ignored");VerifyPreview(stereo,h,6,prefix,eyeWidth,eyeHeight);SetEvent(done.h);
         WaitEvent(go.h);Require(!stereo.Update()&&stereo.FrameId()==6,"Stale frame consumed");
+        Require(!stereo.HasFreshFrame(),"Expired source must be unavailable at submission");
         D3D12_RESOURCE_DESC td{};td.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;td.Width=eyeWidth;td.Height=eyeHeight;td.DepthOrArraySize=1;td.MipLevels=1;td.SampleDesc.Count=1;td.Format=DXGI_FORMAT_R8G8B8A8_UNORM;td.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
         D3D12_HEAP_PROPERTIES hp{};hp.Type=D3D12_HEAP_TYPE_DEFAULT;ComPtr<ID3D12Resource> validTarget;
         Check(gpu.device->CreateCommittedResource(&hp,D3D12_HEAP_FLAG_NONE,&td,D3D12_RESOURCE_STATE_RENDER_TARGET,nullptr,IID_PPV_ARGS(&validTarget)),"valid stale target");

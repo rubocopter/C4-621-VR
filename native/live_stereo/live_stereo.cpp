@@ -171,6 +171,10 @@ UINT LiveStereo::Height() const noexcept { return impl_->layout.height; }
 UINT LiveStereo::EyeWidth() const noexcept { return impl_->eyeWidth; }
 UINT LiveStereo::EyeHeight() const noexcept { return impl_->eyeHeight; }
 const reprojection::ProjectionCalibration& LiveStereo::Calibration() const noexcept { return impl_->calibration; }
+bool LiveStereo::HasFreshFrame() const noexcept {
+    const auto& i=*impl_;
+    return i.last&&i.StreamValid()&&live_pair::Fresh(GetTickCount64(),i.tick);
+}
 bool LiveStereo::Update() {
     auto& i=*impl_;i.Drain();
     if(!i.StreamValid()) return false;
@@ -212,7 +216,7 @@ bool LiveStereo::TryBlit(ID3D12Resource* target,DXGI_FORMAT format,unsigned eye)
     auto& i=*impl_;
     const bool bgra=format==DXGI_FORMAT_B8G8R8A8_UNORM||format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
     if(eye>1||(!bgra&&format!=DXGI_FORMAT_R8G8B8A8_UNORM&&format!=DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)||!target) throw std::invalid_argument("Blit requires eye 0/1 and RGBA/BGRA UNORM/sRGB target");
-    if(!i.last||!i.StreamValid()||!live_pair::Fresh(GetTickCount64(),i.tick)) return false;
+    if(!HasFreshFrame()) return false;
     ComPtr<ID3D12Device> owner;Check(target->GetDevice(IID_PPV_ARGS(&owner)),"target GetDevice");auto d=target->GetDesc();
     const auto typeless=bgra?DXGI_FORMAT_B8G8R8A8_TYPELESS:DXGI_FORMAT_R8G8B8A8_TYPELESS;
     if(owner.Get()!=i.device.Get()||d.Dimension!=D3D12_RESOURCE_DIMENSION_TEXTURE2D||d.Width!=i.eyeWidth||d.Height!=i.eyeHeight||d.DepthOrArraySize!=1||d.MipLevels!=1||d.SampleDesc.Count!=1||!(d.Flags&D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)||(d.Format!=format&&d.Format!=typeless))
