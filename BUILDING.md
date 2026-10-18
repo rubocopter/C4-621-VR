@@ -58,6 +58,10 @@ SteamVR or OpenXR. See [projection evidence](PROJECTION_FINDINGS.md#contrato-de-
 
 ## Testing inside the headset
 
+For the default-OFF, eight-second projection/provenance diagnostic and its
+CPU/GPU fixtures, see [frame provenance](docs/FRAME_PROJECTION_PROVENANCE.md).
+It does not enable per-frame projection or require a headset.
+
 Read the [verified status](docs/STATUS.md) and follow the [current isolated stereo procedure](docs/VR_TRIAL_RUNBOOK.md). Historical conditions and measurements remain in [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) and [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md). The verified 18 October 2026 reference trial explicitly used `--eye-width 2560 --eye-height 1440 --rotation-limit-deg 90 --headtracking`. The program defaults remain 1280×720 and 25°.
 
 The loader checks a specific executable path/hash and requires a cooperatively launched, separately confirmed single-player/offline session; it is **not** a general-purpose injector. Do not run experiments in official matchmaking or with anti-cheat active. Use a new PID, never reuse mapped DLL names, and never force-unload a mapped diagnostic DLL. Stop with F12 and verify hook restoration. Avoid publishing private game assets or diagnostic captures.

@@ -97,6 +97,9 @@ pruebas con GPU local**.
    demostrar identidad temporal de matriz, cámara, viewport y jitter con el
    envío elegible. Solo después diseñar metadata versionada por secuencia/slot,
    rechazando ausencias/desajustes. No generalizar matrices de una captura.
+   Preparación host posterior: [traza opcional de procedencia por envío y
+   grabación](FRAME_PROJECTION_PROVENANCE.md), con helper explícitamente sin
+   asociación y sin cambios al transporte/presentación. Falta el binding GPU.
 2. **Geometría del visor y escala:** integrar poses/FOV por ojo, establecer
    unidades/IPD y presentación adecuada; validar físicamente antes de cambiar
    la ruta por defecto. La preparación host no acredita esas capacidades.

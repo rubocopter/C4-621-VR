@@ -13,6 +13,7 @@ This is the documentation entry point for **C4-621 VR**, an experimental Armored
 | *What has actually been seen in the headset?* | [Verified status](STATUS.md) → [Live stereo trials](../LIVE_STEREO_FINDINGS.md) → [quality and pacing measurements](../QUALITY_PACING_FINDINGS.md) |
 | *How do I repeat the accepted bounded trial?* | [Current stereo procedure](VR_TRIAL_RUNBOOK.md), with isolated binaries and explicit consumer selection |
 | *How does the D3D12 capture work?* | [Render capture](../RENDER_CAPTURE_FINDINGS.md) → [color/depth pairing](../FRAME_PAIR_FINDINGS.md) → [continuous GPU stream](../LIVE_STEREO_FINDINGS.md) |
+| *Which submission/recording supplied a captured pair?* | [Optional frame provenance trace and missing projection binding](FRAME_PROJECTION_PROVENANCE.md) |
 | *What if the pair expires during the last eye copy?* | [Final source check before frame submission](../LIVE_STEREO_FINDINGS.md#frescura-al-enviar-el-par--corrección-host-del-18-10-2026) |
 | *Where does stereo disparity come from?* | [Projection and offline stereo](../PROJECTION_FINDINGS.md) → [continuous stereo](../LIVE_STEREO_FINDINGS.md) |
 | *Can the consumer use different image intrinsics per eye?* | [Optional parallel-eye intrinsics: host contract and tests](EYE_PROJECTION_CONTRACT.md) |
