@@ -99,9 +99,11 @@ otra vista, FOV distinto, jitter incorrecto, NaN/Inf y forma incompatible.
 Todos siguen sin poder ascender a metadata de frame. **No son tests positivos
 de correspondencia de matrices con AC6**: no existe todavía ese observador.
 
-El fixture GPU del productor diagnóstico contrasta los cuatro pares con las
-copias reales ya verificadas, exige que depth/color tengan distintos envíos
-y distingue reejecución de nueva grabación. Se ejecutan también los builds
+El fixture GPU del productor diagnóstico contrasta los pares con las copias
+reales ya verificadas, exige que depth/color tengan distintos envíos
+y distingue reejecución de nueva grabación. Tras corregir el cierre de ventana
+retiene tres pares y declara omitido el cuarto publicado al reanudar; las
+capturas y fences del stream continúan. Se ejecutan también los builds
 predeterminados del productor, consumidor y presentador host.
 Logs privados en `out/frame-projection-20261018/`. Los RED iniciales son de
 API/módulo ausentes, no una regresión visual del prototipo. El desbordamiento
@@ -113,7 +115,7 @@ válida aunque otra lista la sustituyese por DEPTH_WRITE antes de copiar.
 `superseded-depth-red.log` registra el fallo; se corrige reconstruyendo el
 estado en orden envío/índice, invalidándolo por aliasing/lista no fiable o
 cambio de cola y retirándolo tras capturar. `superseded-depth-green.log`
-incluye esos negativos. El JSONL del fixture GPU se analizó además con el
+incluye esos negativos. En la primera tanda, el JSONL del fixture GPU se analizó con el
 mismo código: cuatro fuentes resueltas y únicamente `producer_failure`,
 esperado porque ese fixture termina provocando Resize para comprobar la parada.
 También se reprodujo y cerró RED → GREEN el caso de dos pares inventados
@@ -166,10 +168,44 @@ ventana lo corrige sin aumentar capacidad ni relajar el analizador. Los tests
 incluyen reanudación: conserva tres pares y declara el cuarto omitido. Logs
 RED/GREEN en `out/frame-projection-window-20261018/`. El build nuevo v18 usa otro
 directorio; v17 permanece intacto. Cinco CTests ON correctos y 53 tests Python
-(52 correctos, una integración GPU opcional omitida). Esta corrección todavía
-no se ha ejecutado dentro del juego.
+(52 correctos, una integración GPU opcional omitida); también pasan los cinco
+CTests OFF en otro directorio nuevo. La pasada con el build corregido se
+registra a continuación.
 
-## Próxima observación mínima (requiere presencia)
+## Verificación presencial v18 — PID 11284
+
+Usuario presente y confirmación expresa para repetir solo los 8 s con v18.
+Build de `4d1556a`, otro directorio/nombre, conservando v17 intacta y mapeada
+inactiva. Misma misión cooperativa offline, sin visor, consumidor o seguimiento.
+Loader volvió a verificar identidad, módulos y nombre nuevo. Código 0;
+ocho hooks restaurados y juego respondiendo. Ambas DLLs quedan inactivas.
+
+| Evidencia v18 | Resultado |
+| --- | --- |
+| Captura | 3 pares, 715 descartes esperados, una cola, sin fallo ni ledger inseguro |
+| Pares 1 / 2 / 3 | envíos 26 / 54 / 82; cada depth en lista índice 1 y color en índice 2 del mismo lote |
+| Ventana retenida | 214 listas; cierre en envío 110; 0 overflow, 0 pares omitidos; 20104 envíos totales observados por el contador |
+| Helper | 256 muestras, 77 direcciones de vista y 11 modelos; 0 inválidas/incompletas |
+| Ventana del helper | 1,1214 ms; todas terminan antes del envío del primer par |
+| Analizador | `capture_provenance_complete:true`, sin errores; `frame_associated:false`, `missing_raster_binding` |
+
+Se verifica la cadena de transiciones observadas → envío → copia publicada
+por sequence/slot para esos tres pares. No se demuestra último draw/escritor,
+binding de cámara ni versión de matriz. El contador total continúa después
+del cierre, pero no se presenta esa cola de eventos como una traza completa.
+El resultado de v17 sigue rechazado; no se reinterpretó ni se sobrescribió.
+
+Evidencia privada: `evidence/frame-trace-v18-11284-loader.json`,
+`evidence/frame-trace-v18-11284-analysis.json`,
+`evidence/frame-trace-v18-11284-observation.json` y JSONL
+`out/frame-projection-window-20261018/diagnostic/Release/live_pair_probe_v18_11284.jsonl`.
+SHA-256 DLL: `c4501972e5515cb91483a8b681730e2ba2ba3fd2d8011e4d9e433d6d6e729da8`.
+SHA-256 JSONL: `ff0f5530f73c788fa6e81082a5da7706828967f7b092d66dfbee388c9a6d2658`.
+No se ha probado ni cambiado la presentación PSVR2. No hace falta repetir
+esta sonda para validar su cierre: el siguiente trabajo debe localizar el
+binding/bytes de GPU a partir de los callsites recogidos.
+
+## Procedimiento para una sesión nueva (no es una prueba pendiente)
 
 No necesita visor ni consumidor. Una ventana de **8 s**, sin seguimiento,
 en misión cooperativa offline ya confirmada, ejecutable/hash esperado y PID
@@ -218,4 +254,6 @@ ctest --test-dir out/frame-projection-new -C Release --output-on-failure --no-te
 Estos comandos solo compilan/ejecutan fixtures propios. El default OFF conserva
 el productor de 60 s y siete hooks; el diagnóstico es de 8 s con ocho hooks.
 Ninguna opción de presentación, baseline, preset, límite de giro, frescura o
-fence cambia. La repetición con v18 descrita arriba sigue sin ejecutar.
+fence cambia. La pasada v18 se registra arriba. No recargar v17/v18 en el
+PID 11284 ni sobrescribir sus binarios; para otro ensayo en ese proceso se
+necesitarían nombre/directorio nuevos y otra comprobación presencial.

@@ -102,8 +102,10 @@ pruebas con GPU local**.
    asociación y sin cambios al transporte/presentación. Falta el binding GPU.
    La observación presencial v17 recogió 3 pares y 256 salidas del helper
    (70 direcciones de vista / 10 modelos), pero agotó la traza de listas:
-   análisis rechazado. El cierre de ventana al primer backpressure está
-   corregido en host; no valida todavía una matriz por par ni cambia VR.
+   análisis rechazado. El cierre al primer backpressure se corrigió y verificó
+   en v18: 3 pares, 214 listas, cero overflow/pares omitidos y fuentes resueltas;
+   77 direcciones de vista/11 modelos. Hooks restaurados y juego respondiendo.
+   Es procedencia de transiciones, sin binding de matriz por par ni prueba VR.
 2. **Geometría del visor y escala:** integrar poses/FOV por ojo, establecer
    unidades/IPD y presentación adecuada; validar físicamente antes de cambiar
    la ruta por defecto. La preparación host no acredita esas capacidades.
