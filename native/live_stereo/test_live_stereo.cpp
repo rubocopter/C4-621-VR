@@ -15,6 +15,16 @@
 #include <functional>
 using Microsoft::WRL::ComPtr;
 namespace {
+// Test-only models, independent of the consumer. 1..4 exercise a different
+// focal scale, forward/reverse depth and both view-Z conventions.
+UINT fixtureProfile=0;
+struct FixtureProjection { double fx,a,b,sign; };
+FixtureProjection Model() {
+    if(!fixtureProfile) return {0.572404087,-2.02655792e-6,1.00000203,1};
+    const double sign=fixtureProfile>2?-1:1;
+    const bool reverse=fixtureProfile%2==1;
+    return {1,sign*(reverse?-1:2),reverse?2.0:-2.0,sign};
+}
 void Require(bool b,const char* why) { if(!b) throw std::runtime_error(why); }
 void Check(HRESULT hr,const char* why) { Require(SUCCEEDED(hr),why); }
 struct Handle {
@@ -75,6 +85,10 @@ struct Gpu {
 // Nontrivial source pitches/offsets and half-size horizontal output create
 // collisions. Alpha intentionally varies: consumer must always output 255.
 float Depth(UINT x,UINT y,UINT frame) {
+    if(fixtureProfile&&frame==4&&x<7) {
+        const float edge[]={std::numeric_limits<float>::infinity(),-0.1f,1.1f,-std::numeric_limits<float>::infinity(),-0.f,0.f,1.f};
+        return edge[x];
+    }
     if(frame==6) return x%2?0.0067077986896038055f:0.006707798223942518f;
     if(frame==4&&((x/37+y/19)%5==0)) return std::numeric_limits<float>::quiet_NaN();
     if(frame==4) return x%2?0.75001f:0.25f;
@@ -93,14 +107,16 @@ UINT Rgba(UINT x,UINT y,UINT frame,UINT fmt) {
 }
 std::vector<UINT> Oracle(const live_pair::Header& h,UINT frame,UINT eye,UINT eyeWidth=1280,UINT eyeHeight=720) {
     std::vector<UINT> out(size_t(eyeWidth)*eyeHeight,0xff000000),winner(out.size(),UINT_MAX);
-    std::vector<float> nearest(out.size(),-1);
+    std::vector<double> nearest(out.size(),std::numeric_limits<double>::infinity());
+    const auto p=Model();
     for(UINT y=0;y<h.height;++y) for(UINT x=0;x<h.width;++x) {
-        float d=Depth(x,y,frame); if(!std::isfinite(d)) continue;
-        double z=1.00000203/(double(d)+2.02655792e-6);
-        double px=(x+0.5)*eyeWidth/h.width-0.572404087*(eye?0.25:-0.25)*eyeWidth/(2*z),py=(y+0.5)*eyeHeight/h.height;
+        float d=Depth(x,y,frame); if(!std::isfinite(d)||d<0||d>1) continue;
+        double z=p.sign*p.b/(p.sign*double(d)-p.a);
+        if(!std::isfinite(z)||z<=0) continue;
+        double px=(x+0.5)*eyeWidth/h.width-p.fx*(eye?0.25:-0.25)*eyeWidth/(2*z),py=(y+0.5)*eyeHeight/h.height;
         if(px<0||px>=eyeWidth) continue;
         UINT t=UINT(std::floor(py))*eyeWidth+UINT(std::floor(px)),id=y*h.width+x;
-        if(d>nearest[t]||(d==nearest[t]&&id<winner[t])) { nearest[t]=d;winner[t]=id;out[t]=Rgba(x,y,frame,h.color_format); }
+        if(z<nearest[t]||(z==nearest[t]&&id<winner[t])) { nearest[t]=z;winner[t]=id;out[t]=Rgba(x,y,frame,h.color_format); }
     }
     return out;
 }
@@ -153,6 +169,14 @@ void VerifyBlits(Gpu& gpu,LiveStereo& stereo,const live_pair::Header& h,UINT fra
     }
 }
 std::unique_ptr<LiveStereo> ConfiguredStereo(Gpu& gpu,const std::wstring& name,UINT width,UINT height) {
+    if(fixtureProfile) {
+        const auto p=Model();
+        // Nonzero principal point offsets are intentionally omitted from the
+        // reduced contract: they cancel for identical parallel projections.
+        std::array<float,16> m{float(p.fx),0,0,0,0,1,0,0,0.125f,-0.25f,float(p.a),float(p.sign),0,0,float(p.b),0};
+        reprojection::ProjectionCalibration calibration{reprojection::Perspective::FromRowMatrix(m),reprojection::CalibrationProvenance::ExplicitUnassociated};
+        return std::make_unique<LiveStereo>(gpu.device.Get(),gpu.queue.Get(),name,0.5f,width,height,calibration);
+    }
     // Keep exercising the original three-argument call for the default fixture.
     if(width==1280&&height==720) return std::make_unique<LiveStereo>(gpu.device.Get(),gpu.queue.Get(),name);
     return std::make_unique<LiveStereo>(gpu.device.Get(),gpu.queue.Get(),name,0.5f,width,height);
@@ -172,10 +196,18 @@ void Worker(const std::wstring& name,const std::wstring& prefix,bool timeout,UIN
     View view;view.p=static_cast<live_pair::Header*>(MapViewOfFile(map.h,FILE_MAP_READ|FILE_MAP_WRITE,0,0,sizeof(live_pair::Header)));Require(bool(view.p),"worker view");auto& h=*view.p;
     Handle go,done;go.h=OpenEventW(SYNCHRONIZE,FALSE,(name+L"_go").c_str());done.h=OpenEventW(EVENT_MODIFY_STATE,FALSE,(name+L"_done").c_str());
     std::cout<<"consumer PID="<<GetCurrentProcessId()<<" producer PID="<<h.producer_pid<<" (separate D3D12 devices)\n";
+    for(auto bad: {reprojection::ProjectionCalibration{{1,1,.5f,1,1},reprojection::CalibrationProvenance::ExplicitUnassociated},
+                   reprojection::ProjectionCalibration{{1,1,-1,2,1},reprojection::CalibrationProvenance::LegacyAc6Observation}}) {
+        Reject([&]{LiveStereo invalid(gpu.device.Get(),gpu.queue.Get(),name,0.5f,eyeWidth,eyeHeight,bad);},"Invalid projection reached stream consumer");
+        Require(live_pair::Read32(h.consumer_pid)==0,"Invalid calibration claimed stream");
+    }
     {
         auto ownedStereo=ConfiguredStereo(gpu,name,eyeWidth,eyeHeight);auto& stereo=*ownedStereo;
         Require(stereo.Width()==h.width&&stereo.Height()==h.height,"source dimensions");
         Require(stereo.EyeWidth()==eyeWidth&&stereo.EyeHeight()==eyeHeight,"configured eye dimensions");
+        const auto& calibration=stereo.Calibration();calibration.Validate();
+        std::cout<<"projection="<<calibration.Json()<<'\n';
+        Require(calibration.provenance==(fixtureProfile?reprojection::CalibrationProvenance::ExplicitUnassociated:reprojection::CalibrationProvenance::LegacyAc6Observation),"Projection provenance lost");
         Require(live_pair::Read32(h.consumer_pid)==LONG(GetCurrentProcessId()),"consumer PID not claimed");
         Reject([&]{LiveStereo duplicate(gpu.device.Get(),gpu.queue.Get(),name);},"Second consumer accepted");
         Require(live_pair::Read32(h.consumer_pid)==LONG(GetCurrentProcessId()),"Failed duplicate cleared live claim");
@@ -244,6 +276,7 @@ void Producer(UINT fmt,bool timeout=false,UINT eyeWidth=1280,UINT eyeHeight=720)
     };
     Handle go,done;go.h=CreateEventW(nullptr,FALSE,FALSE,(name+L"_go").c_str());done.h=CreateEventW(nullptr,FALSE,FALSE,(name+L"_done").c_str());
     wchar_t exe[32768];Require(GetModuleFileNameW(nullptr,exe,32768)>0,"exe path");std::wstring cmd=L"\""+std::wstring(exe)+(timeout?L"\" --worker-timeout \"":L"\" --worker \"")+name+L"\" \""+prefix+L"\" "+std::to_wstring(eyeWidth)+L" "+std::to_wstring(eyeHeight);
+    cmd+=L" "+std::to_wstring(fixtureProfile);
     SECURITY_ATTRIBUTES sa{sizeof(sa),nullptr,TRUE};Handle log;const auto logPath=prefix+L".worker.log";
     log.h=CreateFileW(logPath.c_str(),GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE,&sa,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);Require(log.h!=INVALID_HANDLE_VALUE,"worker log");
     STARTUPINFOW si{};si.cb=sizeof(si);si.dwFlags=STARTF_USESHOWWINDOW|STARTF_USESTDHANDLES;si.wShowWindow=SW_HIDE;si.hStdOutput=si.hStdError=log.h;si.hStdInput=GetStdHandle(STD_INPUT_HANDLE);PROCESS_INFORMATION pi{};
@@ -271,12 +304,13 @@ void Producer(UINT fmt,bool timeout=false,UINT eyeWidth=1280,UINT eyeHeight=720)
     step();Require(released->GetCompletedValue()==9,"Aged full ring was not retired without source reads");
     InterlockedExchange(&h.status,live_pair::Ready);publish(0,10);step();Require(released->GetCompletedValue()==10,"Resumed frame release missing");
     Require(WaitForSingleObject(process.h,15000)==WAIT_OBJECT_0,"Worker exit timeout");DWORD code=1;GetExitCodeProcess(process.h,&code);printLog();Require(code==0,"Consumer fixture failed");gpu.NoErrors();CloseHandle(log.h);log.h=nullptr;std::filesystem::remove(logPath);
-    std::cout<<"PASS format="<<fmt<<" eye="<<eyeWidth<<'x'<<eyeHeight<<" changing frames, masks, parallax, byte-exact previews and 8 target blits, skip/repeat/release/stale/Stopped/validation\n";
+    std::cout<<"PASS format="<<fmt<<" eye="<<eyeWidth<<'x'<<eyeHeight<<" profile="<<fixtureProfile<<" changing frames, masks, parallax, byte-exact previews and 8 target blits, skip/repeat/release/stale/Stopped/validation\n";
 }
 }
 int wmain(int argc,wchar_t** argv) try {
     if(argc==2&&std::wstring(argv[1])==L"--invalid-resolution") VerifyResolutionValidation();
-    else if(argc==6&&(std::wstring(argv[1])==L"--worker"||std::wstring(argv[1])==L"--worker-timeout")) Worker(argv[2],argv[3],std::wstring(argv[1])==L"--worker-timeout",UINT(std::stoul(argv[4])),UINT(std::stoul(argv[5])));
+    else if(argc==7&&(std::wstring(argv[1])==L"--worker"||std::wstring(argv[1])==L"--worker-timeout")) { fixtureProfile=UINT(std::stoul(argv[6]));Worker(argv[2],argv[3],std::wstring(argv[1])==L"--worker-timeout",UINT(std::stoul(argv[4])),UINT(std::stoul(argv[5]))); }
+    else if(argc==2&&std::wstring(argv[1])==L"--projection-contract") { for(fixtureProfile=1;fixtureProfile<=4;++fixtureProfile) Producer(28); }
     else if(argc==2&&std::wstring(argv[1])==L"--timeout") Producer(28,true);
     else if(argc==2&&std::wstring(argv[1])==L"--1080p") { Producer(24,false,1920,1080);Producer(28,false,1920,1080);Producer(87,false,1920,1080); }
     else if(argc==2&&std::wstring(argv[1])==L"--1440p") Producer(28,false,2560,1440);

@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 #include "shader.hpp"
+#include "../reprojection/projection.hpp"
 using Microsoft::WRL::ComPtr;
 struct Params {
     UINT sw,sh,tw,th;
@@ -31,8 +32,8 @@ static void Check(HRESULT hr,const char* why) { if(FAILED(hr)) throw std::runtim
 static UINT Count(UINT w,UINT h) { Require(w&&h&&w<=16384&&h<=16384&&static_cast<UINT64>(w)*h<=65535ull*256,"Invalid dimensions (limit 65535 groups of 256 pixels)"); return w*h; }
 static void Validate(const Params& p) {
     Count(p.sw,p.sh); Count(p.tw,p.th);
-    Require(std::isfinite(p.fx)&&p.fx>0&&std::isfinite(p.fy)&&p.fy>0&&std::isfinite(p.a)&&std::isfinite(p.b)&&p.b!=0&&
-        (p.wsign==1||p.wsign==-1)&&std::isfinite(p.eyeX),"Unsupported projection parameters");
+    reprojection::Perspective{p.fx,p.fy,p.a,p.b,p.wsign}.Validate();
+    Require(std::isfinite(p.eyeX),"Eye offset must be finite");
 }
 static std::vector<UINT> Oracle(const Params& p,const std::vector<float>& depth) {
     std::vector<UINT> ids(Count(p.tw,p.th),UINT_MAX);
@@ -171,6 +172,11 @@ public:
     }
 };
 static void SelfTest(Gpu& gpu) {
+    for(auto coefficients:{std::array<float,2>{0.5f,1},std::array<float,2>{2,1},std::array<float,2>{-1,-1}}) {
+        Params invalid{8,6,8,6,1,1,coefficients[0],coefficients[1],1,0};
+        bool rejected=false;try { Validate(invalid); } catch(const std::exception&) { rejected=true; }
+        Require(rejected,"Projection with interior pole or behind-camera depth range accepted");
+    }
     unsigned cases=0;
     auto test=[&](Params p,std::vector<float> depth) {
         std::vector<UINT> color(depth.size()); for(UINT i=0;i<color.size();++i) color[i]=0xff000000|i*12345;
@@ -196,6 +202,14 @@ static void SelfTest(Gpu& gpu) {
     test(precision,{0.006707798223942518f,0.0067077986896038055f});
     precision.a=0; precision.b=1; test(precision,{0,0.25f}); // Infinite far pole rejected.
     precision.a=-1.f/9; precision.b=10.f/9; test(precision,{-0.f,0.f});
+    for(float sign:{1.f,-1.f}) for(bool reverse:{false,true}) {
+        Params edge{8,1,4,1,1,1,sign*(reverse?0.f:1.f),reverse?1.f:-1.f,sign,0};
+        test(edge,{nan,std::numeric_limits<float>::infinity(),-0.1f,1.1f,-0.f,0.f,1.f,0.5f});
+        // At zero eye offset both samples collide. Original depth must choose
+        // the nearer, including forward-Z where LOWER device depth wins.
+        edge.a=sign*(reverse?-1.f:2.f);edge.b=reverse?2.f:-2.f;
+        test(edge,{0.25f,std::nextafter(0.25f,1.f),0.5f,0.5f,1,0,0.75f,0.875f});
+    }
     std::cout<<"{\"fixture_cases\":"<<cases<<",\"exact_indices_and_color\":true,\"debug_layer\":"<<(gpu.debug_layer?"true":"false")<<"}\n";
 }
 static void Write(const std::filesystem::path& path,const void* bytes,size_t count) {

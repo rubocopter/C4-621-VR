@@ -147,6 +147,7 @@ struct Probe {
             gpu_capture=std::make_unique<GpuWindowBridge>(pid,gpu->device.Get(),gpu->queue.Get());
         } else if(pid) capture=std::make_unique<WindowCapture>(pid,gpu->adapter.Get());
         if(tracking) publisher=std::make_unique<PosePublisher>(pid,options.rotation_limit);
+        if(pair_stream) Event("{\"kind\":\"projection_calibration\",\"projection\":"+pair_stream->Calibration().Json()+"}");
         Event("{\"kind\":\"metadata\",\"runtime\":"+Quote(runtime.runtimeName)+",\"system\":"+Quote(properties.systemName)+
             ",\"graphics\":\"D3D12\",\"mode\":"+Quote(pair_stream?"live_depth_reprojected_pair_quad":static_stereo?"static_depth_reprojected_pair_quad":pid?"game_window_quad":"per_eye_pattern_quad")+
             ",\"game_pid\":"+std::to_string(pid)+",\"width\":"+std::to_string(options.eye_width)+",\"height\":"+std::to_string(options.eye_height)+",\"format\":"+std::to_string(format)+

@@ -3,6 +3,7 @@ cbuffer Params : register(b0) {
     uint colorOffset, colorPitch, colorFormat;
     float eyeX;
     uint tw, th;
+    float fx, a, b, wsign;
 };
 ByteAddressBuffer source : register(t0);
 RWByteAddressBuffer closest : register(u0);
@@ -19,16 +20,7 @@ bool Project(uint index,out uint target,out uint depthKey) {
     if(index>=sw*sh) return false;
     float d=asfloat(source.Load(depthOffset+(index/sw)*depthPitch+(index%sw)*4));
     if(!isfinite(d)||d<0||d>1) return false;
-    // Fixed observed projection: fx=.572404087, A=-2.02655792e-6,
-    // B=1.00000203, W=1. fy cancels for parallel horizontal eye shifts.
-    float distance=1.00000203/(d+2.02655792e-6);
-    if(!isfinite(distance)||distance<=0) return false;
-    float px=((index%sw)+0.5)*tw/sw-0.572404087*eyeX*tw/(2*distance);
-    float py=((index/sw)+0.5)*th/sh;
-    if(!isfinite(px)||px<0||px>=(float)tw||py<0||py>=(float)th) return false;
-    target=(uint)floor(py)*tw+(uint)floor(px);
-    // Minimum ORIGINAL device-depth key, preserving adjacent floats.
-    depthKey=0x3f800000u-(asuint(d)&0x7fffffffu);return true;
+    return ProjectParallel(index,sw,sh,tw,th,d,fx,a,b,wsign,eyeX,target,depthKey);
 }
 [numthreads(256,1,1)]
 void DepthPass(uint3 tid : SV_DispatchThreadID) {

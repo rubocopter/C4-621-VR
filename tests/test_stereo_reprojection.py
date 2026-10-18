@@ -16,6 +16,33 @@ def device_depth(distance):
 
 
 class StereoReprojectionTests(unittest.TestCase):
+    def test_parallel_shortcut_matches_full_matrix_inverse_with_principal_offsets(self):
+        # Independent 4x4 inverse/multiply oracle; catches sign, half-pixel and
+        # target-size errors without reusing the shortcut's depth formula.
+        color = np.ones((4, 16, 3))
+        for sign in (-1, 1):
+            for reverse in (False, True):
+                m = np.array([1.25, 0, 0, 0, 0, 1.5, 0, 0,
+                              .125 * sign, -.25 * sign,
+                              (-1 if reverse else 2) * sign, sign,
+                              0, 0, 2 if reverse else -2, 0], dtype='float64')
+                for size in ((16, 4), (8, 2), (32, 8)):
+                    for eye_x in (-.25, 0, .25):
+                        depth = np.full((4, 16), np.nan)
+                        depth[1, 7] = .375
+                        ndc = np.array([2 * 7.5 / 16 - 1, 1 - 2 * 1.5 / 4, .375, 1])
+                        point = ndc @ np.linalg.inv(m.reshape(4, 4))
+                        point /= point[3]
+                        point[0] -= eye_x
+                        projected = point @ m.reshape(4, 4)
+                        projected /= projected[3]
+                        tx = int(np.floor((projected[0] + 1) * size[0] / 2))
+                        ty = int(np.floor((1 - projected[1]) * size[1] / 2))
+                        result = reproject_eye(color, depth, m.tolist(), eye_x, size)
+                        expected = np.full((size[1], size[0]), -1)
+                        expected[ty, tx] = 23
+                        np.testing.assert_array_equal(result['source_index'], expected)
+
     def test_zero_offset_upscale_is_independent_of_depth(self):
         expected = np.full((2, 16), -1)
         expected[1, 1::2] = np.arange(8)

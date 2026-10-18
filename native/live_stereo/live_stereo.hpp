@@ -3,9 +3,11 @@
 #include <d3d12.h>
 #include <string>
 #include <memory>
+#include "../reprojection/projection.hpp"
 class LiveStereo {
 public:
-    LiveStereo(ID3D12Device*,ID3D12CommandQueue*,const std::wstring& mappingName,float baselineGameUnits=0.5f,UINT eyeWidth=1280,UINT eyeHeight=720);
+    LiveStereo(ID3D12Device*,ID3D12CommandQueue*,const std::wstring& mappingName,float baselineGameUnits=0.5f,UINT eyeWidth=1280,UINT eyeHeight=720,
+               reprojection::ProjectionCalibration calibration=reprojection::ProjectionCalibration::LegacyObservedAc6());
     ~LiveStereo();
     bool Update(); // newest shared frame; no CPU pixel readback
     void Blit(ID3D12Resource* xrTarget,DXGI_FORMAT format,unsigned eye);
@@ -16,6 +18,7 @@ public:
     UINT Height() const noexcept;
     UINT EyeWidth() const noexcept;
     UINT EyeHeight() const noexcept;
+    const reprojection::ProjectionCalibration& Calibration() const noexcept;
     void SavePreview(const std::wstring& prefix); // optional test/debug only; RGBA raw EyeWidth() x EyeHeight() per eye
 private:
     struct Impl;
