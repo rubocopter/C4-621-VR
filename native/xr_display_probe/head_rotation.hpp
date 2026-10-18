@@ -32,8 +32,8 @@ inline std::array<float,9> RelativeRows(Quaternion reference,Quaternion current,
             2*(x*y-z*w),1-2*(x*x+z*z),2*(y*z+x*w),
             2*(x*z+y*w),2*(y*z-x*w),1-2*(x*x+y*y)};
 }
-inline std::array<float,9> CameraRows(Quaternion reference,Quaternion current) {
-    auto rows=RelativeRows(reference,current);
+inline std::array<float,9> CameraRows(Quaternion reference,Quaternion current,float limit=25.f) {
+    auto rows=RelativeRows(reference,current,limit);
     const float signs[3]={1,1,-1};
     for(unsigned i=0;i<3;++i) for(unsigned j=0;j<3;++j) rows[i*3+j]*=signs[i]*signs[j];
     return rows;

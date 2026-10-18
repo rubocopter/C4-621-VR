@@ -2,13 +2,13 @@ cbuffer Params : register(b0) {
     uint sw, sh, depthOffset, depthPitch;
     uint colorOffset, colorPitch, colorFormat;
     float eyeX;
+    uint tw, th;
 };
 ByteAddressBuffer source : register(t0);
 RWByteAddressBuffer closest : register(u0);
 RWByteAddressBuffer winner : register(u1);
 RWByteAddressBuffer rgba : register(u2);
 RWByteAddressBuffer bgra : register(u3);
-static const uint tw=1280, th=720;
 [numthreads(256,1,1)]
 void Clear(uint3 tid : SV_DispatchThreadID) {
     if(tid.x>=tw*th) return;

@@ -8,12 +8,31 @@ import ctypes as C
 from ctypes import wintypes as W
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import subprocess
 import sys
 import time
 from observe_camera import EXPECTED_EXE, EXPECTED_SHA, process_metadata
+
+
+def consumer_command(exe, mode, mapping, prefix, log, pid, tracking, width, height, rotation_limit):
+    if (width, height) not in ((1280, 720), (1920, 1080), (2560, 1440)):
+        raise ValueError('Unsupported eye size')
+    if not math.isfinite(rotation_limit) or not 1 <= rotation_limit <= 180 or (not tracking and rotation_limit != 25):
+        raise ValueError('Rotation limit requires tracking and must be 1..180 degrees')
+    if mode == 'monitor':
+        if tracking:
+            raise ValueError('Head tracking requires VR mode')
+        return [str(exe), mapping, '6', str(prefix), str(width), str(height)]
+    if mode != 'vr':
+        raise ValueError('Unknown consumer mode')
+    command = [str(exe), '--pair-stream', mapping, '--seconds', '27' if tracking else '20', '--output', str(log),
+               '--eye-width', str(width), '--eye-height', str(height)]
+    if tracking:
+        command += ['--game-pid', str(pid), '--headtracking', '--rotation-limit-deg', str(rotation_limit)]
+    return command
 
 
 def rows(path):
@@ -61,11 +80,21 @@ def main():
     p.add_argument('--tag', required=True)
     p.add_argument('--mode', choices=('monitor', 'vr'), default='monitor')
     p.add_argument('--headtracking', action='store_true')
+    p.add_argument('--eye-width', type=int, default=1280)
+    p.add_argument('--eye-height', type=int, default=720)
+    p.add_argument('--rotation-limit-deg', type=float, default=25)
+    p.add_argument('--camera-dll', type=Path)
     args = p.parse_args()
     if args.pid <= 0 or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', args.tag):
         p.error('Invalid PID or new evidence tag')
     if args.headtracking and args.mode != 'vr':
         p.error('Head tracking requires VR mode')
+    if args.camera_dll and not args.headtracking:
+        p.error('Camera DLL requires head tracking')
+    try:
+        consumer_command('', args.mode, '', Path('.'), Path('.'), args.pid, args.headtracking, args.eye_width, args.eye_height, args.rotation_limit_deg)
+    except ValueError as error:
+        p.error(str(error))
     dll = args.dll.resolve(strict=True)
     if not re.fullmatch(r'ac6_live_pair_probe_v[1-9][0-9]*\.dll', dll.name):
         p.error('Select a uniquely versioned live pair DLL')
@@ -81,11 +110,13 @@ def main():
     root = Path(__file__).resolve().parents[1]
     display = root / 'native/xr_display_probe/build/Release/ac6_xr_display_probe.exe'
     monitor = root / 'native/live_stereo/build/Release/live_stereo_monitor.exe'
-    camera = root / 'native/camera_probe/build/Release/ac6_headtracking_calibrated_probe.dll'
+    camera = (args.camera_dll or root / 'native/camera_probe/build/Release/ac6_headtracking_calibrated_probe.dll').resolve()
+    if args.headtracking and not re.fullmatch(r'ac6_headtracking_calibrated_probe(?:_v[1-9][0-9]*)?\.dll', camera.name):
+        p.error('Select a calibrated headtracking probe')
     app_exe = monitor if args.mode == 'monitor' else display
     if not app_exe.is_file():
         raise RuntimeError('Build the consumer first')
-    if args.headtracking and (not camera.is_file() or camera.name.lower() in modules or camera.with_name(f'headtracking_calibrated_probe_{args.pid}.jsonl').exists()):
+    if args.headtracking and (not camera.is_file() or camera.name.lower() in modules or camera.with_name(f'{camera.stem.removeprefix("ac6_")}_{args.pid}.jsonl').exists()):
         raise RuntimeError('Camera probe requires a new session without a mapped/calibrated probe or existing log')
     folder = root / 'evidence'
     prefix = folder / args.tag
@@ -100,6 +131,8 @@ def main():
         raise RuntimeError('Evidence exists; choose a new tag and unmapped DLL')
     folder.mkdir(parents=True, exist_ok=True)
     report = dict(pid=args.pid, mode=args.mode, mapping=mapping, game_files_changed=False,
+                  eye_width=args.eye_width, eye_height=args.eye_height, rotation_limit_degrees=args.rotation_limit_deg if args.headtracking else 0,
+                  auxiliary_screenshots=False,
                   source_is_live=True, depth_reprojected_stereo=True, metric_scale_calibrated=False,
                   producer_sha256=hashlib.sha256(dll.read_bytes()).hexdigest(),
                   consumer_sha256=hashlib.sha256(app_exe.read_bytes()).hexdigest())
@@ -119,9 +152,7 @@ def main():
                 time.sleep(0.05)
             else:
                 raise RuntimeError('Producer readiness timeout')
-            command = [str(monitor), mapping, '6', str(prefix)] if args.mode == 'monitor' else [str(display), '--pair-stream', mapping, '--seconds', '27' if args.headtracking else '20', '--output', str(app_log)]
-            if args.headtracking:
-                command += ['--game-pid', str(args.pid), '--headtracking']
+            command = consumer_command(app_exe,args.mode,mapping,prefix,app_log,args.pid,args.headtracking,args.eye_width,args.eye_height,args.rotation_limit_deg)
             app = subprocess.Popen(command, cwd=root, stdout=consumer_output, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW)
             if args.headtracking:
                 deadline = time.monotonic() + 35
@@ -133,8 +164,10 @@ def main():
                 else:
                     raise RuntimeError('No visible fresh image and tracked orientation')
                 camera_report = prefix.with_name(prefix.name + '-camera.json')
+                report['camera_dll'] = str(camera)
+                report['camera_sha256'] = hashlib.sha256(camera.read_bytes()).hexdigest()
                 camera_result = subprocess.run([sys.executable, '-B', str(root / 'tools/load_camera_probe.py'), '--pid', str(args.pid), '--single-player-confirmed',
-                    '--dll', str(camera), '--capture', str(prefix) + '-tracking.png', '--output', str(camera_report)], cwd=root,
+                    '--dll', str(camera), '--capture', str(prefix) + '-tracking.png', '--output', str(camera_report), '--no-screenshots'], cwd=root,
                     capture_output=True, text=True, timeout=45, creationflags=subprocess.CREATE_NO_WINDOW)
                 report['camera_loader_exit_code'] = camera_result.returncode
             report['consumer_exit_code'] = app.wait(timeout=65)

@@ -27,6 +27,7 @@ def main():
     parser.add_argument("--dll", type=Path, required=True)
     parser.add_argument("--capture", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--no-screenshots", action="store_true", help="Skip auxiliary window screenshots during a measured trial")
     args = parser.parse_args()
     dll_path = args.dll.resolve(strict=True)
     meta = process_metadata(args.pid)
@@ -48,8 +49,8 @@ def main():
     prefix = "headtracking_probe" if is_tracking else "camera_probe"
     if dll_path.name == "ac6_headtracking_display_probe.dll":
         prefix = "headtracking_display_probe"
-    elif dll_path.name == "ac6_headtracking_calibrated_probe.dll":
-        prefix = "headtracking_calibrated_probe"
+    elif re.fullmatch(r"ac6_headtracking_calibrated_probe(?:_v[1-9][0-9]*)?\.dll", dll_path.name):
+        prefix = dll_path.stem.removeprefix("ac6_")
     elif dll_path.name == "ac6_depth_batch_capture_probe.dll":
         prefix = "depth_batch_capture_probe"
     elif dll_path.name == "ac6_depth_capture_probe.dll":
@@ -102,7 +103,8 @@ def main():
         raise C.WinError(C.get_last_error())
     allocation, thread, completed = None, None, False
     report = {"pid": args.pid, "dll": str(dll_path), "dll_sha256": hashlib.sha256(dll_path.read_bytes()).hexdigest(),
-              "native_log": str(log_path), "method": "Windows LoadLibraryW in explicit mod process", "game_files_changed": False}
+              "native_log": str(log_path), "method": "Windows LoadLibraryW in explicit mod process", "game_files_changed": False,
+              "auxiliary_screenshots": not args.no_screenshots}
     try:
         buffer = C.create_string_buffer(16)
         count = C.c_size_t()
@@ -140,7 +142,7 @@ def main():
                     continue
                 records = [json.loads(line) for line in text.splitlines() if line.endswith("}")]
                 phases = {r["phase"] for r in records}
-                if "offset_started" in phases and not capture_done:
+                if "offset_started" in phases and not capture_done and not args.no_screenshots:
                     offset_seen_at = time.monotonic()
                     args.capture.parent.mkdir(parents=True, exist_ok=True)
                     capture = subprocess.run(["um.cmd", "win", "shot", "--exe", "armoredcore6.exe", str(args.capture), "--scale", "0.33"],

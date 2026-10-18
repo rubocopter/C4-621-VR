@@ -25,6 +25,11 @@ int main() {
         // XR looks along -Z; this AC6 camera needs reflected Z coordinates.
         // Reflection must invert yaw/pitch together while preserving roll.
         Equal(CameraRows(Yaw(30),Yaw(120)),{std::cos(a),0,std::sin(a),0,1,0,-std::sin(a),0,std::cos(a)});
+        const float wide=90*3.14159265358979323846f/180;
+        Equal(CameraRows(Yaw(30),Yaw(120),90),{std::cos(wide),0,std::sin(wide),0,1,0,-std::sin(wide),0,std::cos(wide)});
+        Equal(CameraRows(Yaw(30),Yaw(120),180),CameraRows(Yaw(30),Yaw(120),90));
+        const float almost_back=170*3.14159265358979323846f/180;
+        Equal(CameraRows(Yaw(0),Yaw(170),180),{std::cos(almost_back),0,std::sin(almost_back),0,1,0,-std::sin(almost_back),0,std::cos(almost_back)});
         const float half=10*3.14159265358979323846f/360;
         const float angle=half*2;
         Equal(CameraRows(Yaw(0),{std::sin(half),0,0,std::cos(half)}),

@@ -8,6 +8,8 @@
 #include "static_stereo.hpp"
 #include "../live_stereo/live_stereo.hpp"
 #include "stereo_frame.hpp"
+#include "presentation_options.hpp"
+#include "frame_metrics.hpp"
 #include <winrt/base.h>
 #include <DirectXMath.h>
 #include <array>
@@ -82,9 +84,19 @@ struct Probe {
     std::filesystem::path output;
     bool static_stereo=false;
     std::array<std::vector<std::uint8_t>,2> static_pixels;
+    PresentationOptions options;
+    FrameMetric wait_timing,update_timing,stereo_timing,end_timing,source_age_timing,frame_interval_timing;
+    std::array<FrameMetric,2> blit_timings;
+    static double Milliseconds(Clock::time_point start) { return std::chrono::duration<double,std::milli>(Clock::now()-start).count(); }
+    void Timing(const char* name,const FrameMetric& metric) {
+        const auto value=metric.Summary();
+        Event("{\"kind\":\"cpu_stage_timing_ms\",\"stage\":"+Quote(name)+",\"count\":"+std::to_string(value.count)+",\"sampled\":"+std::to_string(value.sampled)+
+            ",\"mean\":"+std::to_string(value.mean)+",\"p50\":"+std::to_string(value.p50)+",\"p95\":"+std::to_string(value.p95)+",\"max\":"+std::to_string(value.maximum)+"}");
+    }
     void Event(const std::string& row) { log << row << '\n'; log.flush(); std::cout << row << std::endl; }
     explicit Probe(const std::filesystem::path& path,DWORD pid,bool tracking,bool gpu_mode,
-        const std::array<std::filesystem::path,2>& stereo_paths,const std::wstring& stream_name):output(path) {
+        const std::array<std::filesystem::path,2>& stereo_paths,const std::wstring& stream_name,PresentationOptions settings={}):output(path),options(settings) {
+        options.Validate(!stream_name.empty(),tracking);
         if(std::filesystem::exists(path)) throw std::runtime_error("Evidence file already exists");
         if(path.has_parent_path()) std::filesystem::create_directories(path.parent_path());
         log.open(path); if(!log) throw std::runtime_error("Cannot create evidence file");
@@ -98,6 +110,8 @@ struct Probe {
         XrSystemProperties properties{XR_TYPE_SYSTEM_PROPERTIES};
         XCheck(xr.GetSystemProperties(xr.instance,system,&properties),"xrGetSystemProperties");
         if(properties.graphicsProperties.maxLayerCount<2) throw std::runtime_error("Two quad layers required");
+        if(options.eye_width>properties.graphicsProperties.maxSwapchainImageWidth||options.eye_height>properties.graphicsProperties.maxSwapchainImageHeight)
+            throw std::runtime_error("Eye resolution exceeds runtime swapchain limits");
         XrGraphicsRequirementsD3D12KHR requirements{XR_TYPE_GRAPHICS_REQUIREMENTS_D3D12_KHR};
         XCheck(xr.GetD3D12GraphicsRequirementsKHR(xr.instance,system,&requirements),"xrGetD3D12GraphicsRequirementsKHR");
         gpu=std::make_unique<GpuUpload>(requirements);
@@ -120,27 +134,27 @@ struct Probe {
         for(unsigned eye=0;eye<2;++eye) {
             XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
             info.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_SAMPLED_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
-            info.format=format; info.sampleCount=1; info.width=WIDTH; info.height=HEIGHT;
+            info.format=format; info.sampleCount=1; info.width=options.eye_width; info.height=options.eye_height;
             info.faceCount=info.arraySize=info.mipCount=1;
             XCheck(xr.CreateSwapchain(session,&info,&chains[eye]),"xrCreateSwapchain");
             XCheck(xr.EnumerateSwapchainImages(chains[eye],0,&count,nullptr),"xrEnumerateSwapchainImages count");
             images[eye].assign(count,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
             XCheck(xr.EnumerateSwapchainImages(chains[eye],count,&count,reinterpret_cast<XrSwapchainImageBaseHeader*>(images[eye].data())),"xrEnumerateSwapchainImages");
         }
-        if(!stream_name.empty()) pair_stream=std::make_unique<LiveStereo>(gpu->device.Get(),gpu->queue.Get(),stream_name);
+        if(!stream_name.empty()) pair_stream=std::make_unique<LiveStereo>(gpu->device.Get(),gpu->queue.Get(),stream_name,0.5f,options.eye_width,options.eye_height);
         else if(pid && gpu_mode) {
             winrt::init_apartment(winrt::apartment_type::multi_threaded);
             gpu_capture=std::make_unique<GpuWindowBridge>(pid,gpu->device.Get(),gpu->queue.Get());
         } else if(pid) capture=std::make_unique<WindowCapture>(pid,gpu->adapter.Get());
-        if(tracking) publisher=std::make_unique<PosePublisher>(pid);
+        if(tracking) publisher=std::make_unique<PosePublisher>(pid,options.rotation_limit);
         Event("{\"kind\":\"metadata\",\"runtime\":"+Quote(runtime.runtimeName)+",\"system\":"+Quote(properties.systemName)+
             ",\"graphics\":\"D3D12\",\"mode\":"+Quote(pair_stream?"live_depth_reprojected_pair_quad":static_stereo?"static_depth_reprojected_pair_quad":pid?"game_window_quad":"per_eye_pattern_quad")+
-            ",\"game_pid\":"+std::to_string(pid)+",\"width\":1280,\"height\":720,\"format\":"+std::to_string(format)+
+            ",\"game_pid\":"+std::to_string(pid)+",\"width\":"+std::to_string(options.eye_width)+",\"height\":"+std::to_string(options.eye_height)+",\"format\":"+std::to_string(format)+
             ",\"head_locked\":"+std::string(tracking?"true":"false")+",\"headtracking\":"+std::string(tracking?"true":"false")+
             ",\"capture_transport\":"+Quote(pair_stream?"gpu_shared_paired_buffer":static_stereo?"static_rgba_upload":gpu_mode?"gpu_shared_texture":"cpu_readback")+",\"pixel_changes_measured\":"+std::string(pair_stream||gpu_mode||static_stereo?"false":"true")+
             ",\"depth_reprojected_stereo\":"+std::string(pair_stream||static_stereo?"true":"false")+",\"source_is_live\":"+std::string(pair_stream||pid?"true":"false")+
             ",\"eye_images_distinct\":"+std::string(pair_stream?"null":static_stereo&&static_pixels[0]!=static_pixels[1]?"true":"false")+
-            ",\"rotation_limit_degrees\":25,\"pose_coordinate_conversion\":\"reflect_z\",\"game_geometry_stereo\":false}");
+            ",\"rotation_limit_degrees\":"+std::to_string(options.rotation_limit)+",\"pose_coordinate_conversion\":\"reflect_z\",\"game_geometry_stereo\":false}");
     }
     void Poll() {
         while(true) {
@@ -173,6 +187,7 @@ struct Probe {
         const auto began=Clock::now();
         auto visible_began=Clock::time_point{};
         auto last_capture=began-std::chrono::seconds(1),last_log=began;
+        auto previous_frame=Clock::time_point{};
         // Give the user 30 seconds to put the headset back on after replying.
         // Never count SYNCHRONIZED-only frames as the visual test interval.
         while(!stop && std::chrono::duration<double>(Clock::now()-began).count()<seconds+30) {
@@ -182,8 +197,13 @@ struct Probe {
                 visible_began=Clock::now();
             if(visible_began!=Clock::time_point{} && std::chrono::duration<double>(Clock::now()-visible_began).count()>=seconds) break;
             if(!running) { Sleep(10); continue; }
+            const auto frame_start=Clock::now();
+            if(previous_frame!=Clock::time_point{}) frame_interval_timing.Add(std::chrono::duration<double,std::milli>(frame_start-previous_frame).count());
+            previous_frame=frame_start;
             XrFrameState frame{XR_TYPE_FRAME_STATE}; XrFrameWaitInfo wait{XR_TYPE_FRAME_WAIT_INFO};
+            const auto wait_start=Clock::now();
             XCheck(xr.WaitFrame(session,&wait,&frame),"xrWaitFrame");
+            wait_timing.Add(Milliseconds(wait_start));
             XrFrameBeginInfo begin{XR_TYPE_FRAME_BEGIN_INFO}; XCheck(xr.BeginFrame(session,&begin),"xrBeginFrame");
             ++frames;
             if(!centered) {
@@ -211,7 +231,13 @@ struct Probe {
             if(gpu_capture && gpu_capture->Update()) {
                 ++captured; last_capture_tick=GetTickCount64();
             }
-            if(pair_stream && pair_stream->Update()) { ++captured;last_capture_tick=pair_stream->CaptureTick(); }
+            if(pair_stream) {
+                const auto update_start=Clock::now();
+                if(pair_stream->Update()) { ++captured;last_capture_tick=pair_stream->CaptureTick(); }
+                update_timing.Add(Milliseconds(update_start));
+                const auto now=GetTickCount64();
+                if(last_capture_tick&&now>=last_capture_tick) source_age_timing.Add(double(now-last_capture_tick));
+            }
             const bool fresh=!captures_game || CaptureFresh(GetTickCount64(),last_capture_tick,captured!=0);
             if(captures_game && captured && !fresh && !capture_was_stale) {
                 ++capture_losses; Event("{\"kind\":\"capture_stale\",\"image_hidden\":true,\"tracking_invalidated\":true}");
@@ -232,6 +258,7 @@ struct Probe {
             const XrCompositionLayerBaseHeader* bases[2]={reinterpret_cast<XrCompositionLayerBaseHeader*>(&layers[0]),reinterpret_cast<XrCompositionLayerBaseHeader*>(&layers[1])};
             const bool eligible=frame.shouldRender && centered && fresh;
             std::array<std::uint32_t,2> indices{};
+            const auto stereo_start=Clock::now();
             const bool visible=PresentStereoFrame(eligible,
                 [&](unsigned eye) {
                     XrSwapchainImageAcquireInfo acquire{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
@@ -241,11 +268,14 @@ struct Probe {
                 },
                 [&](unsigned eye) {
                     auto* target=images[eye].at(indices[eye]).texture;
-                    if(pair_stream) { if(!pair_stream->TryBlit(target,format,eye)) return false; }
+                    if(pair_stream) {
+                        const auto blit_start=Clock::now();const bool result=pair_stream->TryBlit(target,format,eye);
+                        blit_timings[eye].Add(Milliseconds(blit_start));if(!result) return false;
+                    }
                     else if(gpu_capture) gpu_capture->Blit(target,format);
                     else gpu->Put(target,pixels[eye],format);
                     auto& layer=layers[eye]; layer.space=publisher?view:local; layer.eyeVisibility=eye?XR_EYE_VISIBILITY_RIGHT:XR_EYE_VISIBILITY_LEFT;
-                    layer.subImage.swapchain=chains[eye]; layer.subImage.imageRect.extent={int(WIDTH),int(HEIGHT)};
+                    layer.subImage.swapchain=chains[eye]; layer.subImage.imageRect.extent={int(options.eye_width),int(options.eye_height)};
                     layer.pose=quad_pose; layer.size={2.4f,1.35f};
                     if(publisher) {
                         layer.pose={}; layer.pose.orientation.w=1; layer.pose.position.z=-1.3f;
@@ -259,10 +289,13 @@ struct Probe {
                     XCheck(xr.ReleaseSwapchainImage(chains[eye],&release),"xrReleaseSwapchainImage");
                 },
                 [&](bool ready) {
+                    const auto end_start=Clock::now();
                     XrFrameEndInfo end{XR_TYPE_FRAME_END_INFO}; end.displayTime=frame.predictedDisplayTime; end.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
                     end.layerCount=ready?2:0; end.layers=ready?bases:nullptr;
                     XCheck(xr.EndFrame(session,&end),"xrEndFrame");
+                    end_timing.Add(Milliseconds(end_start));
                 });
+            stereo_timing.Add(Milliseconds(stereo_start));
             if(eligible&&!visible&&pair_stream) {
                 ++discarded_source_frames;tracking_ready=false;if(publisher) publisher->Invalidate();
                 Event("{\"kind\":\"source_discarded_during_frame\",\"layers\":0}");
@@ -275,6 +308,10 @@ struct Probe {
         }
         if(publisher) publisher->Invalidate();
         ShutdownSession();
+        Timing("xr_wait_frame",wait_timing);Timing("pair_update_including_gpu_wait",update_timing);
+        Timing("left_blit_including_gpu_wait",blit_timings[0]);Timing("right_blit_including_gpu_wait",blit_timings[1]);
+        Timing("stereo_transaction",stereo_timing);Timing("xr_end_frame",end_timing);
+        Timing("source_age",source_age_timing);Timing("frame_interval",frame_interval_timing);
         Event("{\"kind\":\"summary\",\"frames\":"+std::to_string(frames)+",\"submitted_frames\":"+std::to_string(submitted)+
             ",\"visible_frames\":"+std::to_string(visible_frames)+",\"focused_frames\":"+std::to_string(focused)+",\"captured_frames\":"+std::to_string(captured)+",\"changed_capture_frames\":"+std::to_string(changed)+
             ",\"valid_published_poses\":"+std::to_string(valid_poses)+",\"capture_loss_events\":"+std::to_string(capture_losses)+",\"discarded_source_frames\":"+std::to_string(discarded_source_frames)+",\"session_running\":false,\"game_geometry_stereo\":false,\"depth_reprojected_stereo\":"+std::string(pair_stream||static_stereo?"true":"false")+",\"source_is_live\":"+std::string(captures_game?"true":"false")+"}");
@@ -300,6 +337,7 @@ int wmain(int argc,wchar_t** argv) {
         double seconds=15; DWORD pid=0; bool tracking=false,gpu_mode=false; std::filesystem::path output;
         std::array<std::filesystem::path,2> stereo_paths;
         std::wstring stream_name;
+        PresentationOptions options;
         for(int i=1;i<argc;++i) {
             const std::wstring arg=argv[i];
             if(arg==L"--seconds" && i+1<argc) seconds=std::stod(argv[++i]);
@@ -310,7 +348,10 @@ int wmain(int argc,wchar_t** argv) {
             else if(arg==L"--stereo-left" && i+1<argc) stereo_paths[0]=argv[++i];
             else if(arg==L"--stereo-right" && i+1<argc) stereo_paths[1]=argv[++i];
             else if(arg==L"--pair-stream" && i+1<argc) stream_name=argv[++i];
-            else throw std::runtime_error("Usage: --seconds 1..90 --output new.jsonl [--game-pid PID] [--headtracking] [--gpu-capture] [--pair-stream NAME] [--stereo-left left.rgba.raw --stereo-right right.rgba.raw]");
+            else if(arg==L"--eye-width" && i+1<argc) options.eye_width=ParseEyeDimension(argv[++i]);
+            else if(arg==L"--eye-height" && i+1<argc) options.eye_height=ParseEyeDimension(argv[++i]);
+            else if(arg==L"--rotation-limit-deg" && i+1<argc) options.rotation_limit=ParseRotationLimit(argv[++i]);
+            else throw std::runtime_error("Usage: --seconds 1..90 --output new.jsonl [--game-pid PID] [--headtracking] [--gpu-capture] [--pair-stream NAME] [--eye-width W --eye-height H] [--rotation-limit-deg 1..180] [--stereo-left left.rgba.raw --stereo-right right.rgba.raw]");
         }
         if(output.empty() || !std::isfinite(seconds) || seconds<1 || seconds>90) throw std::runtime_error("Output and bounded duration required");
         if(tracking && !pid) throw std::runtime_error("Head tracking requires a selected game PID");
@@ -318,7 +359,8 @@ int wmain(int argc,wchar_t** argv) {
         if(stereo_paths[0].empty()!=stereo_paths[1].empty()) throw std::runtime_error("Both stereo eye paths are required");
         if(!stereo_paths[0].empty()&&(pid||tracking||gpu_mode)) throw std::runtime_error("Static stereo cannot be combined with live game capture or camera tracking");
         if(!stream_name.empty()&&(!stereo_paths[0].empty()||gpu_mode)) throw std::runtime_error("Paired stream cannot be combined with window/static capture");
-        Probe probe(output,pid,tracking,gpu_mode,stereo_paths,stream_name); return probe.Run(seconds);
+        options.Validate(!stream_name.empty(),tracking);
+        Probe probe(output,pid,tracking,gpu_mode,stereo_paths,stream_name,options); return probe.Run(seconds);
     } catch(const winrt::hresult_error& e) { std::cerr << "WinRT: " << winrt::to_string(e.message()) << '\n'; return 1; }
     catch(const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

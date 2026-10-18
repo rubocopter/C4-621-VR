@@ -12,6 +12,7 @@
 #include <cwchar>
 #include <share.h>
 #include <cstddef>
+#include <string>
 #include "yaw.hpp"
 
 using CopyCamera = void(__fastcall*)(void*, void*);
@@ -144,7 +145,10 @@ static DWORD WINAPI Worker(void*) {
     if (!name) return 1;
     ++name;
 #ifdef AC6_HEADTRACKING_CALIBRATED_PROBE
-    swprintf_s(name, 32768 - (name - path), L"headtracking_calibrated_probe_%lu.jsonl", GetCurrentProcessId());
+    std::wstring stem(name);
+    if(stem.size()<9 || stem.substr(0,4)!=L"ac6_" || stem.substr(stem.size()-4)!=L".dll") return 1;
+    stem=stem.substr(4,stem.size()-8);
+    swprintf_s(name, 32768 - (name - path), L"%ls_%lu.jsonl",stem.c_str(),GetCurrentProcessId());
 #elif defined(AC6_HEADTRACKING_DISPLAY_PROBE)
     swprintf_s(name, 32768 - (name - path), L"headtracking_display_probe_%lu.jsonl", GetCurrentProcessId());
 #elif defined(AC6_HEADTRACKING_PROBE)

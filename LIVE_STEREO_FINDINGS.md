@@ -1,6 +1,6 @@
 # Captura continua y reproyección GPU — 16-10-2026
 
-**Estado: estéreo continuo y seguimiento de cabeza observados en PSVR2; baja definición, tirones y límite de 25° pendientes de mejora.** Ruta experimental posterior a la escena fija confirmada por el usuario. Tres buffers DEFAULT compartidos llevan pares color/depth desde AC6 hasta otro proceso D3D12. Ese proceso reconstruye dos ojos en GPU, sin lectura de píxeles en CPU salvo previews diagnósticos. El modelo perspectiva y baseline siguen siendo los de la investigación previa; no hay escala métrica calibrada, proyecciones asimétricas ni tratamiento del HUD.
+**Estado: estéreo continuo y seguimiento de cabeza confirmados en PSVR2; perfil 1440p/90° observado más claro y sin tirones apreciables en la prueba acotada.** Ruta experimental posterior a la escena fija confirmada por el usuario. Tres buffers DEFAULT compartidos llevan pares color/depth desde AC6 hasta otro proceso D3D12. Ese proceso reconstruye dos ojos en GPU, sin lectura de píxeles en CPU salvo previews diagnósticos. El modelo perspectiva y baseline siguen siendo los de la investigación previa; no hay escala métrica calibrada, proyecciones asimétricas ni tratamiento del HUD.
 
 ## Productor y sincronización
 
@@ -71,6 +71,8 @@ V8/PID30252 usa la misma reproyección GPU, con los quads amplios en VIEW y publ
 La revisión del diagnóstico detectó conversión CRT dependiente del locale en nombres Unicode de DLL. El test falló con `%ls`; se sustituyó por escapes JSON ASCII que conservan unidades UTF-16 y pares sustitutos. Se comprueban errores de escritura y flush de los nuevos registros tras retirar hooks. Tres CTests del productor correctos y revisión posterior sin bloqueantes. DLL V8 SHA-256 `a72440afc15bc4d9f7f27b21a25f5366e695669f6b321df6c3d0de816bee3947`; presentador SHA-256 `f71e384b0c4ddf48613b741469f15aab6c2018ec629b3fba0b52dca636e65f33`.
 
 Respuesta a V8: «podia mirar con la cabeza aunque la resolucion es super baja, notaba algun tiron y no podia mirar todo el rango que podia con el mando, aunque supongo que va atado a la \"cabeza\" del cuerpo y el cuerpo no se mueve». Se confirma movimiento por cabeza, sin dar por validada comodidad/fluidez. El límite de 25° es del prototipo y no acredita una restricción del cuerpo. La salida es 1280×720 por ojo ampliada al quad de ~120°; aún no se separan costes de espera OpenXR, reproyección, copia y compositor. Siguiente trabajo: rango y resolución configurables, instrumentación temporal y una nueva comparación acotada.
+
+Seguimiento de estos problemas: [definición, giro y tiempos de presentación](QUALITY_PACING_FINDINGS.md). Se implementan presets, límite seleccionable y tiempos CPU con esperas; las pasadas V9 y V10 completaron correctamente 720p/25° y 1080p/90° respectivamente. La respuesta visual comparativa se registra en ese documento; no asumir que más resolución resuelve los tirones.
 
 ### Construcción y ejecución
 

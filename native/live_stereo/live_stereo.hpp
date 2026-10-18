@@ -5,7 +5,7 @@
 #include <memory>
 class LiveStereo {
 public:
-    LiveStereo(ID3D12Device*,ID3D12CommandQueue*,const std::wstring& mappingName,float baselineGameUnits=0.5f);
+    LiveStereo(ID3D12Device*,ID3D12CommandQueue*,const std::wstring& mappingName,float baselineGameUnits=0.5f,UINT eyeWidth=1280,UINT eyeHeight=720);
     ~LiveStereo();
     bool Update(); // newest shared frame; no CPU pixel readback
     void Blit(ID3D12Resource* xrTarget,DXGI_FORMAT format,unsigned eye);
@@ -14,7 +14,9 @@ public:
     UINT64 CaptureTick() const noexcept;
     UINT Width() const noexcept; // source
     UINT Height() const noexcept;
-    void SavePreview(const std::wstring& prefix); // optional test/debug only; RGBA raw 1280x720/eye
+    UINT EyeWidth() const noexcept;
+    UINT EyeHeight() const noexcept;
+    void SavePreview(const std::wstring& prefix); // optional test/debug only; RGBA raw EyeWidth() x EyeHeight() per eye
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

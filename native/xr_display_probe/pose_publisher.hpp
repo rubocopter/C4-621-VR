@@ -19,6 +19,7 @@ class PosePublisher {
     Quaternion reference{};
     bool centered=false;
     std::uint32_t sequence=0;
+    float rotation_limit=25.f;
     void Write(bool valid,const std::array<float,9>& delta) {
         const DWORD waited=WaitForSingleObject(mutex,0);
         if(waited!=WAIT_OBJECT_0 && waited!=WAIT_ABANDONED) return;
@@ -28,7 +29,8 @@ class PosePublisher {
         ReleaseMutex(mutex);
     }
 public:
-    explicit PosePublisher(DWORD pid) {
+    explicit PosePublisher(DWORD pid,float limit=25.f):rotation_limit(limit) {
+        RelativeRows({0,0,0,1},{0,0,0,1},limit);
         const auto suffix=std::to_wstring(pid);
         mutex=CreateMutexW(nullptr,FALSE,(L"Local\\AC6VRPoseMutex-"+suffix).c_str());
         mapping=CreateFileMappingW(INVALID_HANDLE_VALUE,nullptr,PAGE_READWRITE,0,128,(L"Local\\AC6VRPose-"+suffix).c_str());
@@ -47,7 +49,7 @@ public:
         // Validate before using the first sample as the reference.
         RelativeRows(current,current);
         if(!centered) { reference=current; centered=true; }
-        Write(true,CameraRows(reference,current));
+        Write(true,CameraRows(reference,current,rotation_limit));
     }
     ~PosePublisher() {
         Invalidate(); UnmapViewOfFile(memory); CloseHandle(mapping); CloseHandle(mutex);

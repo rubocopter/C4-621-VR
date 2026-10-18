@@ -12,8 +12,6 @@
 #include <stdexcept>
 using Microsoft::WRL::ComPtr;
 namespace {
-constexpr UINT EyeWidth=1280,EyeHeight=720,EyePixels=EyeWidth*EyeHeight;
-constexpr UINT64 EyeBytes=4ull*EyePixels;
 void Check(HRESULT hr,const char* operation) {
     if(FAILED(hr)) { char message[256];std::snprintf(message,sizeof(message),"%s (HRESULT 0x%08lX)",operation,static_cast<unsigned long>(hr));throw std::runtime_error(message); }
 }
@@ -32,8 +30,8 @@ bool SameLayout(const live_pair::Header& a,const live_pair::Header& b) {
         a.width==b.width&&a.height==b.height&&a.color_format==b.color_format&&a.depth_pitch==b.depth_pitch&&a.color_pitch==b.color_pitch&&
         a.depth_offset==b.depth_offset&&a.color_offset==b.color_offset&&a.buffer_bytes==b.buffer_bytes;
 }
-struct Params { UINT sw,sh,depthOffset,depthPitch,colorOffset,colorPitch,colorFormat;float eyeX; };
-static_assert(sizeof(Params)==32);
+struct Params { UINT sw,sh,depthOffset,depthPitch,colorOffset,colorPitch,colorFormat;float eyeX;UINT tw,th; };
+static_assert(sizeof(Params)==40);
 ComPtr<ID3DBlob> Compile(const char* entry) {
     ComPtr<ID3DBlob> code,errors;
     HRESULT hr=D3DCompile(LiveStereoHlsl,sizeof(LiveStereoHlsl)-1,"live_stereo",nullptr,nullptr,entry,"cs_5_0",D3DCOMPILE_ENABLE_STRICTNESS,0,&code,&errors);
@@ -59,6 +57,8 @@ struct LiveStereo::Impl {
     std::array<ComPtr<ID3D12Resource>,2> rgba,bgra;
     Handle event;
     UINT64 timeline=0,last=0,tick=0,releasedFloor=0;
+    const UINT eyeWidth,eyeHeight,eyePixels;
+    const UINT64 eyeBytes;
     float baseline;
     // Queue waits cannot be cancelled. Never unwind mappings, source buffers,
     // or caller targets after an in-flight failure; only this process exits.
@@ -105,7 +105,9 @@ struct LiveStereo::Impl {
         Handle handle;Check(device->OpenSharedHandleByName(name.c_str(),GENERIC_ALL,&handle.value),"OpenSharedHandleByName");
         Check(device->OpenSharedHandle(handle.value,IID_PPV_ARGS(&result)),"OpenSharedHandle");
     }
-    Impl(ID3D12Device* d,ID3D12CommandQueue* q,const std::wstring& name,float base):device(d),queue(q),baseline(base) {
+    Impl(ID3D12Device* d,ID3D12CommandQueue* q,const std::wstring& name,float base,UINT width,UINT height):device(d),queue(q),eyeWidth(width),eyeHeight(height),eyePixels(width*height),eyeBytes(4ull*width*height),baseline(base) {
+        if(!((width==1280&&height==720)||(width==1920&&height==1080)||(width==2560&&height==1440)))
+            throw std::invalid_argument("Unsupported eye resolution; use 1280x720, 1920x1080, or 2560x1440");
         if(!d||!q||name.empty()||!std::isfinite(base)||base<0) throw std::invalid_argument("Invalid device, queue, mapping name, or baseline");
         ComPtr<ID3D12Device> owner;Check(q->GetDevice(IID_PPV_ARGS(&owner)),"queue GetDevice");
         if(owner.Get()!=d||q->GetDesc().Type!=D3D12_COMMAND_LIST_TYPE_DIRECT||q->GetDesc().NodeMask>1||d->GetNodeCount()!=1)
@@ -139,7 +141,7 @@ struct LiveStereo::Impl {
         event.value=CreateEventW(nullptr,FALSE,FALSE,nullptr);if(!event.value) Check(HRESULT_FROM_WIN32(GetLastError()),"CreateEvent");
         Check(d->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&allocator)),"Create allocator");
         Check(d->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,allocator.Get(),nullptr,IID_PPV_ARGS(&list)),"Create command list");Check(list->Close(),"Close initial list");
-        D3D12_ROOT_PARAMETER params[6]{};params[0].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;params[0].Constants={0,0,8};
+        D3D12_ROOT_PARAMETER params[6]{};params[0].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;params[0].Constants={0,0,10};
         params[1].ParameterType=D3D12_ROOT_PARAMETER_TYPE_SRV;params[1].Descriptor.ShaderRegister=0;
         for(UINT n=2;n<6;++n) { params[n].ParameterType=D3D12_ROOT_PARAMETER_TYPE_UAV;params[n].Descriptor.ShaderRegister=n-2; }
         D3D12_ROOT_SIGNATURE_DESC rs{};rs.NumParameters=6;rs.pParameters=params;
@@ -147,20 +149,22 @@ struct LiveStereo::Impl {
         Check(d->CreateRootSignature(0,serialized->GetBufferPointer(),serialized->GetBufferSize(),IID_PPV_ARGS(&root)),"Create root signature");
         const char* entries[]={"Clear","DepthPass","IndexPass","Resolve"};
         for(UINT n=0;n<4;++n) { auto code=Compile(entries[n]);D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};pd.pRootSignature=root.Get();pd.CS={code->GetBufferPointer(),code->GetBufferSize()};Check(d->CreateComputePipelineState(&pd,IID_PPV_ARGS(&passes[n])),"Create compute pipeline"); }
-        closest=Buffer(EyeBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,true);
-        winner=Buffer(EyeBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,true);
+        closest=Buffer(eyeBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,true);
+        winner=Buffer(eyeBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,true);
         for(UINT eye=0;eye<2;++eye) {
-            rgba[eye]=Buffer(EyeBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_COPY_SOURCE,true);
-            bgra[eye]=Buffer(EyeBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_COPY_SOURCE,true);
+            rgba[eye]=Buffer(eyeBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_COPY_SOURCE,true);
+            bgra[eye]=Buffer(eyeBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_COPY_SOURCE,true);
         }
     }
 };
-LiveStereo::LiveStereo(ID3D12Device* d,ID3D12CommandQueue* q,const std::wstring& name,float baseline):impl_(std::make_unique<Impl>(d,q,name,baseline)) {}
+LiveStereo::LiveStereo(ID3D12Device* d,ID3D12CommandQueue* q,const std::wstring& name,float baseline,UINT eyeWidth,UINT eyeHeight):impl_(std::make_unique<Impl>(d,q,name,baseline,eyeWidth,eyeHeight)) {}
 LiveStereo::~LiveStereo()=default;
 UINT64 LiveStereo::FrameId() const noexcept { return impl_->last; }
 UINT64 LiveStereo::CaptureTick() const noexcept { return impl_->tick; }
 UINT LiveStereo::Width() const noexcept { return impl_->layout.width; }
 UINT LiveStereo::Height() const noexcept { return impl_->layout.height; }
+UINT LiveStereo::EyeWidth() const noexcept { return impl_->eyeWidth; }
+UINT LiveStereo::EyeHeight() const noexcept { return impl_->eyeHeight; }
 bool LiveStereo::Update() {
     auto& i=*impl_;i.Drain();
     if(!i.StreamValid()) return false;
@@ -181,10 +185,10 @@ bool LiveStereo::Update() {
     for(UINT eye=0;eye<2;++eye) {
         i.Barrier(i.rgba[eye].Get(),D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         i.Barrier(i.bgra[eye].Get(),D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        Params p{i.layout.width,i.layout.height,UINT(i.layout.depth_offset),i.layout.depth_pitch,UINT(i.layout.color_offset),i.layout.color_pitch,i.layout.color_format,(eye?0.5f:-0.5f)*i.baseline};
-        i.list->SetComputeRoot32BitConstants(0,8,&p,0);i.list->SetComputeRootUnorderedAccessView(4,i.rgba[eye]->GetGPUVirtualAddress());i.list->SetComputeRootUnorderedAccessView(5,i.bgra[eye]->GetGPUVirtualAddress());
+        Params p{i.layout.width,i.layout.height,UINT(i.layout.depth_offset),i.layout.depth_pitch,UINT(i.layout.color_offset),i.layout.color_pitch,i.layout.color_format,(eye?0.5f:-0.5f)*i.baseline,i.eyeWidth,i.eyeHeight};
+        i.list->SetComputeRoot32BitConstants(0,10,&p,0);i.list->SetComputeRootUnorderedAccessView(4,i.rgba[eye]->GetGPUVirtualAddress());i.list->SetComputeRootUnorderedAccessView(5,i.bgra[eye]->GetGPUVirtualAddress());
         for(UINT pass=0;pass<4;++pass) {
-            i.list->SetPipelineState(i.passes[pass].Get());const UINT count=pass==0||pass==3?EyePixels:p.sw*p.sh;i.list->Dispatch((count+255)/256,1,1);
+            i.list->SetPipelineState(i.passes[pass].Get());const UINT count=pass==0||pass==3?i.eyePixels:p.sw*p.sh;i.list->Dispatch((count+255)/256,1,1);
             D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_UAV;i.list->ResourceBarrier(1,&barrier);
         }
         i.Barrier(i.rgba[eye].Get(),D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_COPY_SOURCE);
@@ -203,12 +207,12 @@ bool LiveStereo::TryBlit(ID3D12Resource* target,DXGI_FORMAT format,unsigned eye)
     if(!i.last||!i.StreamValid()||!live_pair::Fresh(GetTickCount64(),i.tick)) return false;
     ComPtr<ID3D12Device> owner;Check(target->GetDevice(IID_PPV_ARGS(&owner)),"target GetDevice");auto d=target->GetDesc();
     const auto typeless=bgra?DXGI_FORMAT_B8G8R8A8_TYPELESS:DXGI_FORMAT_R8G8B8A8_TYPELESS;
-    if(owner.Get()!=i.device.Get()||d.Dimension!=D3D12_RESOURCE_DIMENSION_TEXTURE2D||d.Width!=EyeWidth||d.Height!=EyeHeight||d.DepthOrArraySize!=1||d.MipLevels!=1||d.SampleDesc.Count!=1||!(d.Flags&D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)||(d.Format!=format&&d.Format!=typeless))
-        throw std::invalid_argument("Blit needs same-device 1280x720 RT texture, one mip/slice/sample, compatible format");
+    if(owner.Get()!=i.device.Get()||d.Dimension!=D3D12_RESOURCE_DIMENSION_TEXTURE2D||d.Width!=i.eyeWidth||d.Height!=i.eyeHeight||d.DepthOrArraySize!=1||d.MipLevels!=1||d.SampleDesc.Count!=1||!(d.Flags&D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)||(d.Format!=format&&d.Format!=typeless))
+        throw std::invalid_argument("Blit needs same-device RT texture matching eye resolution, one mip/slice/sample, compatible format");
     ComPtr<ID3D12Resource> retainTarget=target;
     i.Begin();i.Barrier(target,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_COPY_DEST);
     D3D12_TEXTURE_COPY_LOCATION src{};src.pResource=bgra?i.bgra[eye].Get():i.rgba[eye].Get();src.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-    src.PlacedFootprint.Footprint={format,EyeWidth,EyeHeight,1,EyeWidth*4};
+    src.PlacedFootprint.Footprint={format,i.eyeWidth,i.eyeHeight,1,i.eyeWidth*4};
     D3D12_TEXTURE_COPY_LOCATION dst{};dst.pResource=target;dst.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
     i.list->CopyTextureRegion(&dst,0,0,0,&src,nullptr);i.Barrier(target,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_RENDER_TARGET);i.Submit();
     return true;
@@ -217,12 +221,12 @@ void LiveStereo::SavePreview(const std::wstring& prefix) {
     auto& i=*impl_;if(!i.last) throw std::logic_error("SavePreview before first frame");
     std::array<std::filesystem::path,2> paths{prefix+L".left.rgba.raw",prefix+L".right.rgba.raw"};
     for(const auto& path:paths) if(std::filesystem::exists(path)) throw std::runtime_error("Preview file exists; choose a new prefix");
-    auto readback=i.Buffer(EyeBytes*2,D3D12_HEAP_TYPE_READBACK,D3D12_RESOURCE_STATE_COPY_DEST);
-    i.Begin();for(UINT eye=0;eye<2;++eye) i.list->CopyBufferRegion(readback.Get(),eye*EyeBytes,i.rgba[eye].Get(),0,EyeBytes);i.Submit();
-    void* mapped=nullptr;D3D12_RANGE range{0,SIZE_T(EyeBytes*2)};Check(readback->Map(0,&range,&mapped),"Map preview only");
+    auto readback=i.Buffer(i.eyeBytes*2,D3D12_HEAP_TYPE_READBACK,D3D12_RESOURCE_STATE_COPY_DEST);
+    i.Begin();for(UINT eye=0;eye<2;++eye) i.list->CopyBufferRegion(readback.Get(),eye*i.eyeBytes,i.rgba[eye].Get(),0,i.eyeBytes);i.Submit();
+    void* mapped=nullptr;D3D12_RANGE range{0,SIZE_T(i.eyeBytes*2)};Check(readback->Map(0,&range,&mapped),"Map preview only");
     // GPU is drained; diagnostic write failures can safely unwind.
     try {
-        for(UINT eye=0;eye<2;++eye) { std::ofstream out(paths[eye],std::ios::binary);out.write(static_cast<const char*>(mapped)+eye*EyeBytes,EyeBytes);if(!out) throw std::runtime_error("Write preview failed"); }
+        for(UINT eye=0;eye<2;++eye) { std::ofstream out(paths[eye],std::ios::binary);out.write(static_cast<const char*>(mapped)+eye*i.eyeBytes,i.eyeBytes);if(!out) throw std::runtime_error("Write preview failed"); }
     } catch(...) { D3D12_RANGE empty{0,0};readback->Unmap(0,&empty);throw; }
     D3D12_RANGE empty{0,0};readback->Unmap(0,&empty);
 }

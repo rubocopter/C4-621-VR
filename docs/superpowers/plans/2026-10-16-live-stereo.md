@@ -16,7 +16,7 @@ Main only; no game-file changes or rebuild/reload of mapped DLLs. Stream 60s max
 - [x] Review stream races, resource lifetimes and failure paths; monitor-only live diagnostic successful (PID 5440, 721 pairs published, 414 consumer updates in 6 s).
 - [x] Run short live binocular PSVR2 trial (`--mode vr`); record user feedback and outcome before adding headtracking. V7/PID30252: user confirmed changing scene/depth/no double vision with conventional controller.
 - [x] Run combined binocular/headtracking trial: V8/PID30252, user could look with head but reported low definition, stutter and limited range. Comfort/quality gate remains open.
-- [ ] Improve definition, measure pacing and expose rotation range; validate follow-on trial before eye projections/scale.
+- [x] Improve definition, measure pacing and expose rotation range: presets through1440p and configurable1..180deg; V11/1440p90deg user confirmed clearer/no noticeable stutter during bounded trial. See QUALITY_PACING_FINDINGS.md; sustained comfort/latency remain unvalidated.
 - [ ] Calibrate eye projections/scale.
 - [x] Commit/push base streaming code and docs on main after verification (8dd6190); current live-trial evidence and diagnostics follow in a separate commit.
 

@@ -7,11 +7,22 @@ import tempfile
 import unittest
 import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from run_live_stereo_trial import request_stop, rows
+from run_live_stereo_trial import request_stop, rows, consumer_command
 
 
 @unittest.skipUnless(sys.platform == 'win32', 'Windows shared mapping protocol')
 class LiveTrialControlTests(unittest.TestCase):
+    def test_quality_and_rotation_reach_the_selected_consumer(self):
+        command = consumer_command('display.exe', 'vr', 'mapping', Path('preview'), Path('log'), 123, True, 1920, 1080, 90)
+        self.assertEqual(command[command.index('--eye-width')+1], '1920')
+        self.assertEqual(command[command.index('--eye-height')+1], '1080')
+        self.assertEqual(command[command.index('--rotation-limit-deg')+1], '90')
+        self.assertIn('--headtracking', command)
+        self.assertEqual(consumer_command('monitor.exe', 'monitor', 'mapping', Path('preview'), Path('log'), 123, False, 1920, 1080, 25)[-2:], ['1920', '1080'])
+        for width, height, limit, tracking, mode in [(1920,720,25,False,'vr'),(1280,720,float('nan'),True,'vr'),(1280,720,181,True,'vr'),(1280,720,90,False,'vr'),(1280,720,25,True,'monitor')]:
+            with self.assertRaises(ValueError):
+                consumer_command('app', mode, 'mapping', Path('p'), Path('l'), 123, tracking, width, height, limit)
+
     def test_stop_only_changes_request_field_in_matching_protocol(self):
         kernel = C.WinDLL('kernel32', use_last_error=True)
         kernel.CreateFileMappingW.argtypes = [W.HANDLE, C.c_void_p, W.DWORD, W.DWORD, W.DWORD, W.LPCWSTR]

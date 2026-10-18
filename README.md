@@ -27,11 +27,13 @@ The observed perspective matrix allows depth reconstruction in game units. Separ
 
 A **continuous GPU color/depth stream** now presents stereo from the running game in PS VR2. In a bounded headset trial, the independent D3D12 consumer produced 1,349 stereo updates, and SteamVR recorded 1,408 visible frames. The user confirmed that moving the camera with a conventional controller updated the scene with depth and without double vision. See the [live stereo findings](LIVE_STEREO_FINDINGS.md).
 
-A subsequent trial combined live stereo with head orientation. The user could look around with the headset, but reported low definition, occasional stutter, and the probe's 25-degree rotation limit. This remains an early experiment: image quality, frame pacing, metric scale, and per-eye OpenXR projections need further work. Sense controller input is not implemented; the game uses its normal PC controls. It is not a complete VR conversion or a public release.
+Follow-up trials combined live stereo with head orientation and configurable output quality. The latest bounded trial used **2560×1440 per eye and a 90-degree rotation limit**; the user reported a clearer image with no noticeable stutter. This is the current explicit reference profile, while the program defaults remain 720p/25°. See the [quality and pacing findings](QUALITY_PACING_FINDINGS.md).
+
+This remains an early experiment: sustained comfort, frame pacing, metric scale, and per-eye OpenXR projections need further work. Sense controller input is not implemented; the game uses its normal PC controls. It is not a complete VR conversion or a public release.
 
 ## Project
 
-The work is exploring whether Armored Core VI can become a comfortable, stereoscopic PC VR experience. The next milestone improves **definition, frame pacing, and head rotation range**, followed by correct eye projections and scale.
+The work is exploring whether Armored Core VI can become a comfortable, stereoscopic PC VR experience. Next steps are longer validation, measured pacing improvements, and correct eye projections and scale.
 
 Follow along as the project develops, and [support the work on Ko-fi](https://ko-fi.com/onitaku) if you would like to help.
 
