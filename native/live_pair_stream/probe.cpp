@@ -1,4 +1,5 @@
 #include "stream_capture.hpp"
+#include "json_diagnostic.hpp"
 #include "../frame_pair_probe/fixture.hpp"
 #include <MinHook.h>
 #include <filesystem>
@@ -109,6 +110,17 @@ int RunLivePairProbe(bool self_test,bool gate_test=false) {
         }
         capture->StopStream(); status=MH_DisableHook(MH_ALL_HOOKS); if(status!=MH_OK) throw std::runtime_error(MH_StatusToString(status)); activation_attempted=false;
         bool restored=true; for(unsigned i=0;i<7;++i) restored=restored&&std::memcmp(before[i].data(),targets[i],16)==0;
+        for(UINT i=0;i<capture->queue_observation_count;++i) {
+            const auto& q=capture->queue_observations[i];
+            if(std::fprintf(log,"{\"phase\":\"queue_observation\",\"queue\":\"0x%llx\",\"device\":\"0x%llx\",\"type\":%u,\"same_device\":%s,\"submissions\":%u,\"lists\":%u,\"untrusted\":%u,\"depth_lists\":%u,\"color_lists\":%u,\"aliasing\":%u}\n",static_cast<unsigned long long>(q.identity),static_cast<unsigned long long>(q.device_identity),unsigned(q.type),q.same_device?"true":"false",q.submissions,q.lists,q.untrusted,q.depth_lists,q.color_lists,q.aliasing)<0) throw std::runtime_error("Write queue diagnostic failed");
+            for(USHORT j=0;j<q.stack_count;++j) {
+                HMODULE owner=nullptr;wchar_t owner_path[32768]{};
+                if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(q.stack[j]),&owner)) GetModuleFileNameW(owner,owner_path,32768);
+                const auto owner_name=JsonModuleName(std::filesystem::path(owner_path).filename().wstring());
+                if(std::fprintf(log,"{\"phase\":\"queue_stack\",\"queue\":\"0x%llx\",\"index\":%u,\"module\":%s,\"offset\":\"0x%llx\"}\n",static_cast<unsigned long long>(q.identity),unsigned(j),owner_name.c_str(),static_cast<unsigned long long>(reinterpret_cast<frame_pair::Id>(q.stack[j])-reinterpret_cast<frame_pair::Id>(owner)))<0) throw std::runtime_error("Write queue stack diagnostic failed");
+            }
+        }
+        if(std::fflush(log)!=0) throw std::runtime_error("Flush queue diagnostics failed");
         std::fprintf(log,"{\"phase\":\"stream_summary\",\"frames\":%llu,\"dropped\":%llu,\"multiple_queues\":%s,\"ledger_unsafe\":%s,\"failed\":%s,\"cpu_pixel_readback\":false}\n",capture->frames,capture->dropped,capture->multiple_queues?"true":"false",capture->ledger&&capture->ledger->unsafe?"true":"false",capture->failed.load()?"true":"false");
         std::fprintf(log,"{\"phase\":\"disabled\",\"hooks_restored\":%s,\"dll_retained_inactive\":true}\n",restored?"true":"false"); std::fclose(log);
         return restored&&capture->frames>0&&(self_test||!capture->failed.load())?0:2;

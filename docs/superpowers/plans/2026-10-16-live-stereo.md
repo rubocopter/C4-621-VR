@@ -14,9 +14,11 @@ Main only; no game-file changes or rebuild/reload of mapped DLLs. Stream 60s max
 - [x] GPU consumer library + changing/shared-buffer fixture, exact eye/color/winner tests (two consumer CTests).
 - [x] Integrate consumer in display probe with exclusive --pair-stream option; bounded loader/orchestrator, freshness and evidence.
 - [x] Review stream races, resource lifetimes and failure paths; monitor-only live diagnostic successful (PID 5440, 721 pairs published, 414 consumer updates in 6 s).
-- [ ] Run short live binocular PSVR2 trial (`--mode vr`); record user feedback and outcome before adding headtracking.
-- [ ] Verify combined binocular/headtracking trial and calibrated eye projections/scale in follow-on gates.
-- [ ] Commit/push completed code and docs on main after verification.
+- [x] Run short live binocular PSVR2 trial (`--mode vr`); record user feedback and outcome before adding headtracking. V7/PID30252: user confirmed changing scene/depth/no double vision with conventional controller.
+- [x] Run combined binocular/headtracking trial: V8/PID30252, user could look with head but reported low definition, stutter and limited range. Comfort/quality gate remains open.
+- [ ] Improve definition, measure pacing and expose rotation range; validate follow-on trial before eye projections/scale.
+- [ ] Calibrate eye projections/scale.
+- [x] Commit/push base streaming code and docs on main after verification (8dd6190); current live-trial evidence and diagnostics follow in a separate commit.
 
 ## Review focus
 Slot reuse while GPU reads; skipped sequences; unknown/aliased game list and multi-queue state; resize retaining backbuffer references; consumer exit/no consumer/device loss with outstanding copies.

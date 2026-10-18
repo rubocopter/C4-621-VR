@@ -1,8 +1,13 @@
 #include "protocol.hpp"
+#include "json_diagnostic.hpp"
 #include <iostream>
 static void Require(bool ok,const char* why) { if(!ok) throw std::runtime_error(why); }
 int main() try {
     using namespace live_pair;
+    Require(JsonModuleName(L"overlay.dll")=="\"overlay.dll\"","ASCII module name changed");
+    Require(JsonModuleName(L"m\u00f3d.dll")=="\"m\\u00f3d.dll\"","Unicode module names must be valid JSON independent of CRT locale");
+    Require(JsonModuleName(L"a\"\\\n.dll")=="\"a\\u0022\\u005c\\u000a.dll\"","JSON metacharacters must be escaped");
+    Require(JsonModuleName(std::wstring{wchar_t(0xd83d),wchar_t(0xde80)})=="\"\\ud83d\\ude80\"","UTF-16 surrogate pairs must be preserved");
     Require(Reusable(0,0,0),"Unused slot should be writable");
     Require(!Reusable(4,3,4)&&!Reusable(4,4,3),"Both GPU timelines must complete before reuse");
     Require(Reusable(4,6,7),"Skipping old frames releases only after both fences");

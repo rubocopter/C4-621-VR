@@ -16,6 +16,38 @@ struct StreamCapture : frame_pair::Capture {
     std::vector<HANDLE> handles;
     ComPtr<ID3D12CommandQueue> source_queue;
     bool depth_since_capture=false;
+    struct QueueObservation {
+        frame_pair::Id identity=0,device_identity=0;
+        D3D12_COMMAND_LIST_TYPE type=D3D12_COMMAND_LIST_TYPE_DIRECT;
+        UINT submissions=0,lists=0,untrusted=0,depth_lists=0,color_lists=0,aliasing=0;
+        bool same_device=false;
+        std::array<void*,12> stack{};
+        USHORT stack_count=0;
+    };
+    std::array<QueueObservation,8> queue_observations{};
+    UINT queue_observation_count=0;
+    void ObserveQueue(ID3D12CommandQueue* queue,UINT n,ID3D12CommandList* const* lists) {
+        const auto id=reinterpret_cast<frame_pair::Id>(queue);
+        QueueObservation* observation=nullptr;
+        for(UINT i=0;i<queue_observation_count;++i) if(queue_observations[i].identity==id) observation=&queue_observations[i];
+        if(!observation&&queue_observation_count<queue_observations.size()) {
+            observation=&queue_observations[queue_observation_count++];
+            observation->identity=id;observation->type=queue->GetDesc().Type;
+            observation->stack_count=CaptureStackBackTrace(0,static_cast<DWORD>(observation->stack.size()),observation->stack.data(),nullptr);
+            ComPtr<ID3D12Device> queue_device;
+            if(SUCCEEDED(queue->GetDevice(IID_PPV_ARGS(&queue_device)))) {
+                observation->device_identity=reinterpret_cast<frame_pair::Id>(queue_device.Get());
+                observation->same_device=queue_device.Get()==device.Get();
+            }
+        }
+        if(!observation) return;
+        ++observation->submissions;observation->lists+=n;
+        for(UINT i=0;i<n;++i) {
+            const auto summary=ledger->Snapshot(reinterpret_cast<frame_pair::Id>(lists[i]));
+            observation->untrusted+=!summary.trusted;observation->depth_lists+=summary.depth_touched;
+            observation->color_lists+=summary.color_touched!=0;observation->aliasing+=summary.aliasing;
+        }
+    }
     void Fail() { frame_pair::Capture::Fail(); if(auto* h=published_header.load()) InterlockedExchange(&h->status,live_pair::Failed); }
     void Resize() { std::lock_guard lock(mutex); Fail(); }
     void PrepareStream(const std::wstring& name) {
@@ -73,6 +105,7 @@ struct StreamCapture : frame_pair::Capture {
         try {
             std::lock_guard lock(mutex);
             if(stage.load()!=Armed) { forwarded=true;original(queue,n,lists);return; }
+            ObserveQueue(queue,n,lists);
             const auto id=reinterpret_cast<frame_pair::Id>(queue);
             if(execution_queue&&execution_queue!=id) { multiple_queues=true;Fail(); }
             execution_queue=id;

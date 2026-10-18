@@ -25,13 +25,13 @@ A GPU texture-sharing capture path has been tested with the live game, and paire
 
 The observed perspective matrix allows depth reconstruction in game units. Separate eye views were first generated offline on CPU and D3D12; the resulting **static stereo scene was displayed in PS VR2**, where the user confirmed perceived depth without double vision. See the [projection and stereo findings](PROJECTION_FINDINGS.md).
 
-A **continuous GPU color/depth stream** has now also been demonstrated with the running game. In a six-second **monitor-only** trial, the producer published 721 paired frames (dropping 120 without blocking the game), and the independent D3D12 consumer produced 414 stereo updates with distinct left/right images and changing scene content. **Continuous stereo has not yet been tested in the headset.** See the [live stereo findings](LIVE_STEREO_FINDINGS.md).
+A **continuous GPU color/depth stream** now presents stereo from the running game in PS VR2. In a bounded headset trial, the independent D3D12 consumer produced 1,349 stereo updates, and SteamVR recorded 1,408 visible frames. The user confirmed that moving the camera with a conventional controller updated the scene with depth and without double vision. See the [live stereo findings](LIVE_STEREO_FINDINGS.md).
 
-This remains an early experiment: the confirmed headset gameplay view uses a monoscopic image with restricted head rotation; the confirmed stereo headset trial uses a fixed capture. Metric scale, per-eye OpenXR projections, continuous binocular headset presentation, and combined stereo/head tracking still need validation. It is not a complete VR conversion or a public release.
+A subsequent trial combined live stereo with head orientation. The user could look around with the headset, but reported low definition, occasional stutter, and the probe's 25-degree rotation limit. This remains an early experiment: image quality, frame pacing, metric scale, and per-eye OpenXR projections need further work. Sense controller input is not implemented; the game uses its normal PC controls. It is not a complete VR conversion or a public release.
 
 ## Project
 
-The work is exploring whether Armored Core VI can become a comfortable, stereoscopic PC VR experience. The next milestone is a bounded **live stereo headset trial**, followed by validation with head orientation, correct eye projections, and scale.
+The work is exploring whether Armored Core VI can become a comfortable, stereoscopic PC VR experience. The next milestone improves **definition, frame pacing, and head rotation range**, followed by correct eye projections and scale.
 
 Follow along as the project develops, and [support the work on Ko-fi](https://ko-fi.com/onitaku) if you would like to help.
 
