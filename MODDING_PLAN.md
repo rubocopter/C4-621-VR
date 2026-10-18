@@ -1,7 +1,6 @@
 # Armored Core VI — investigación de mod VR (actualizado 16-10-2026)
 
-> **Status update (18 October 2026):** The current PSVR2 prototype has already demonstrated **live depth-reprojected stereo combined with calibrated head orientation**. A bounded 2560×1440-per-eye, 90° trial was reported clearer and without noticeable stutter. This remains a time-limited proof of concept, not a complete VR conversion or proof of sustained comfort. See [README.md](README.md), [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) and [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md). Historical procedures and pending gates below document the state at the time of each experiment.
-
+> **Estado actualizado (18-10-2026):** el prototipo PSVR2 ya ha demostrado **estéreo continuo reproyectado desde profundidad combinado con orientación de cabeza calibrada**. En una prueba acotada de 2560×1440 por ojo y 90° se observó mayor nitidez y ningún tirón apreciable. Esto no acredita una conversión VR completa ni comodidad prolongada. El estado vigente está en [README.md](README.md), [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) y [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md). Los procedimientos y gates anteriores que siguen a continuación se conservan como historial.
 
 ## Objetivo
 
@@ -52,7 +51,7 @@ Referencias de terceros:
 
 Actualización de la medición del preset: la matriz observada con el mod activo deriva FOV Y ~89.0000° y FOV X ~120.4260°. La fórmula reverse-Z ya permite reconstruir unidades del juego; no está establecida su equivalencia a metros. La referencia estéreo offline y el diagnóstico GPU se detallan en `PROJECTION_FINDINGS.md`.
 
-- El juego no ofrece API oficial de VR ni integración visible con OpenXR. La reproyección continua desde un único par color/depth ya funciona en monitor; aún debe verificarse su presentación en el visor, latencia, artefactos de oclusión y si resulta suficiente frente a renderizar dos vistas de geometría independientes.
+- El juego no ofrece API oficial de VR. El prototipo ya presenta estéreo continuo reproyectado en PSVR2 usando OpenXR, pero todavía deben verificarse latencia, artefactos de oclusión y si una sola captura color/depth resulta suficiente frente a renderizar dos vistas geométricas independientes.
 - `regulation.bin` es un mod de datos: cambia la cámara y el FOV, pero no garantiza pose de cabeza, profundidad estereoscópica, timings de VR o HUD adecuado.
 - La cámara puede reasignarse durante acciones y cinemáticas. El objetivo del análisis es encontrar el punto estable usado por el renderer y validar la restauración.
 - La build instalada y el archivo de parámetros del mod 305 tienen tamaños distintos al archivo original. La jugabilidad básica está confirmada por el usuario; no equivale a una comparación completa de parámetros.

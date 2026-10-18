@@ -16,7 +16,7 @@ Both external dependencies are locally installed into ignored `reference/` paths
 From a PowerShell terminal in the root of the repository:
 
 ```powershell
-pwsh -NoProfile -File tools/bootstrap_dependencies.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/bootstrap_dependencies.ps1
 py -m pip install "numpy>=1.26,<3" "Pillow>=10,<13"
 py -m unittest discover -s tests -v
 py -m compileall -q tools tests

@@ -19,7 +19,7 @@ function Ensure-PinnedCheckout {
             throw "Unmanaged dependency directory exists: $Directory. Back it up or manage it manually."
         }
     } else {
-        Invoke-GitChecked @('clone', '--depth', '1', '--branch', $Tag, $Url, $Directory)
+        Invoke-GitChecked -GitArgs @('clone', '--depth', '1', '--branch', $Tag, $Url, $Directory)
     }
     $actual = (& git -C $Directory rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $actual -ne $Commit) {
