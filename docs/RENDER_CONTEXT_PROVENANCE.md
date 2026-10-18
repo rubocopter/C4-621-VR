@@ -251,12 +251,89 @@ muestras por matrices cercanas ni se declara asociación. Si reaparece otra
 cola, detener sin repetir cargas ni eliminar el gate.
 
 La cobertura buscada ya se obtuvo: no hace falta repetir v22. El siguiente
-incremento debe seguir el forwarding del adaptador CPU, recogiendo la
+incremento sigue el forwarding del adaptador CPU, recogiendo la
 identidad de la interfaz hija y su destino virtual mientras la invocación
-está viva, con comprobación de tipo/layout. Eso exige instrumentación adicional
-acotada y probada en host antes de pedir otra ventana presencial. Leer los
-punteros ahora o repetir la misma sonda no aportaría ese dato.
+está viva, con comprobación de tipo/layout. La instrumentación adicional se
+describe debajo. Leer los punteros ahora o repetir la misma sonda no aportaría
+ese dato.
 
 Siguen pendientes el rango/versión de bytes usados por GPU, el draw que
 escribe el depth capturado, viewport y la correspondencia con TAA/color final.
 Esta sonda no supera por sí sola el gate de proyección.
+
+## Forwarding al entrar en el adaptador — incremento host v24
+
+`AC6_CONTEXT_FORWARD_TRACE=OFF` por defecto; requiere ambas opciones anteriores
+ON. Reutiliza el hook de `0x26e17f0`: sigue habiendo nueve hooks y la ventana de
+64 invocaciones/ocho segundos. No altera el protocolo de 120 bytes, fences,
+propiedad del ring, frescura, calibración ni presentación VR.
+
+El lector nuevo `context_forwarding_trace.hpp` solo sigue el layout observado
+para vtable RVA `0x4098e38`, slot1 `0x2b9d140` y slot5 `0x2b9db10`. Al crear el
+hook, antes de habilitarlo, valida los límites PE `.rdata` de solo lectura y
+`.text` ejecutable sin escritura y cachea esos rangos. En el callback:
+
+1. Comprueba identidad exacta del adaptador/token y vuelve a leer su vtable y
+   slots antes de seguir el layout. Otros tipos se registran como rechazo.
+2. Obtiene padre `contexto-0x80`, payload en `contexto+8` e interfaz hija en
+   `padre+0x60`. Payload nulo cierra esa lectura, como el guard del adaptador.
+3. Lee vtable de la hija y el candidato slot8 (`+0x40`), exigiendo tabla dentro
+   de `.rdata` y destino dentro de `.text`. No desreferencia el payload ni
+   invoca el destino. Una interfaz cuyo destino esté fuera de esos rangos
+   queda rechazada; su semántica no se adivina.
+
+SEH protege las lecturas. Solo se publican todos los punteros o un motivo de
+rechazo con payload íntegramente cero. Sin asignaciones, esperas, consultas de
+memoria al SO ni I/O en el callback. Los campos quedan dentro de la entrada de
+invocación y se publican juntos con el mismo ready release/acquire, después de
+volver el original. Una excepción o llamada aún activa no publica su snapshot.
+Un original que cambia los enlaces no cambia la copia tomada al entrar.
+
+El JSONL añade `forwarding` anidado, `layout_version:1`,
+`sampled_at:invocation_entry`, `dispatch_observed:false`; el resumen declara
+`forwarding_enabled:true`. Es versionado diagnóstico, sin nuevos campos en
+shared memory. La observación es anterior a la llamada virtual: no demuestra
+que ese destino se invoque, que los enlaces no cambien después o que el objeto
+hijo tenga semántica GPU. Los punteros no se reutilizan fuera de la invocación.
+
+El analizador informa `context_forwarding_*` aparte de procedencia de captura
+y scope del helper. Exige publicación/contexto íntegros, versión y tipos
+correctos, parent compatible, token resuelto y ausencia de payload parcial en
+rechazos. No transforma un candidato en dispatch ni asociación de fotograma.
+Logs anteriores: `not_observed`; el código de salida del CLI sigue expresando
+la procedencia de captura, por lo que hay que leer también estos resultados.
+
+### Verificación host
+
+- Ocho CTests correctos con las tres opciones ON y ocho OFF. El test nuevo
+  protege layout, adaptador reciclado, enlaces nulos, destino incompatible,
+  lectura con slot8 en página inaccesible, copia inmutable antes del original
+  y snapshot parcial sin bloquear al escritor. También ejercita las cabeceras
+  PE sintéticas: rangos válidos, escritura prohibida y sección fuera de imagen.
+- Seis pruebas nuevas del analizador: RED por ausencia del resultado de
+  forwarding, GREEN después de implementarlo. Suite completa: 66 pruebas,
+  65 correctas y una integración GPU opcional omitida.
+- El fixture JSONL del ejecutable C++ se valida con Python; al cambiar su
+  contexto por uno reciclado se rechaza. Reanálisis privado de v22/v20 conserva
+  respectivamente sus veredictos de captura aceptada/rechazada y declara el
+  forwarding no observado. No cambia retrospectivamente su alcance.
+- Build nuevo en `out/context-forwarding-20261018/diagnostic/Release/`, DLL
+  `ac6_live_pair_probe_v24.dll`. SHA-256:
+  `27068ec3bf117051d891fca6b10979ebb0d4b4f92a1cc4a750b0b1260953a6b6`.
+  No cargada en AC6 al registrar esta verificación. Las DLLs anteriores se
+  mantienen intactas; build predeterminado aislado con nombre v25.
+
+### Única observación mínima pendiente
+
+Tras comprobación actual de presencia y misión cooperativa offline: una
+ventana de ocho segundos con v24, sin visor/consumidor/seguimiento. La sesión
+v22 terminó normalmente, por lo que su PID puede reutilizarse si identidad,
+prólogos y DLL nueva no mapeada pasan de nuevo el loader. Si hay un fallo o
+segunda cola, detener y conservar evidencia, sin recargar ni relajar gates.
+
+Éxito: captura normal, nueve hooks restaurados y juego respondiendo; al menos
+un `forwarding.status:candidate` completo dentro de su invocación CPU, con
+parent, payload, hija, vtable y destino slot8 no nulos. Conservar JSON del
+loader, JSONL completo y análisis, también si solo hay rechazos. Eso permitirá
+analizar el destino concreto sin seguir punteros caducados; no certificará
+proyección por frame ni validación PSVR2.

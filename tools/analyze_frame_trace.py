@@ -95,6 +95,58 @@ def analyze_context_scopes(events):
                 cpu_scope_gpu_binding_observed=False)
 
 
+def analyze_context_forwarding(events):
+    """Check entry snapshots published with their CPU invocation, not GPU use."""
+    invocations = [e for e in events if e.get('phase') == 'render_context_invocation']
+    summaries = [e for e in events if e.get('phase') == 'render_context_summary']
+    observed = any('forwarding' in e for e in invocations) or any(e.get('forwarding_enabled') for e in summaries)
+    errors, candidates, rejected = [], 0, 0
+    if observed:
+        if len(summaries) != 1 or summaries[0].get('forwarding_enabled') is not True:
+            errors.append('missing_forwarding_contract')
+        if not analyze_context_scopes(events)['cpu_context_scope_complete']:
+            errors.append('incomplete_forwarding_invocation_scope')
+        rejection_statuses = {'adapter_mismatch', 'null_payload', 'null_child', 'invalid_child_vtable', 'invalid_target', 'unreadable'}
+        fields = ('parent', 'payload', 'child', 'child_vtable', 'child_slot8_target')
+        def pointer(record, field):
+            value = record[field]
+            if not isinstance(value, str) or not value.startswith('0x') or not 0 <= int(value, 16) < 2**64:
+                raise ValueError('invalid pointer')
+            return int(value, 16)
+        for invocation in invocations:
+            try:
+                snapshot = invocation['forwarding']
+                if (type(snapshot['layout_version']) is not int or snapshot['layout_version'] != 1
+                        or snapshot['sampled_at'] != 'invocation_entry' or snapshot['dispatch_observed'] is not False):
+                    raise ValueError('unsupported forwarding observation')
+                for field, limit in (('ordinal', 2**64), ('thread', 2**32), ('begin_qpc', 2**63), ('end_qpc', 2**63)):
+                    if type(invocation[field]) is not int or not 0 < invocation[field] < limit:
+                        raise ValueError('invalid invocation identity')
+                if invocation['end_qpc'] < invocation['begin_qpc']:
+                    raise ValueError('invalid invocation interval')
+                values = {field: pointer(snapshot, field) for field in fields}
+                if snapshot['status'] in rejection_statuses:
+                    if any(values.values()):
+                        raise ValueError('partial rejected payload')
+                    rejected += 1
+                elif snapshot['status'] == 'candidate':
+                    context = pointer(invocation, 'context')
+                    if (not all(values.values()) or context < 0x80 or context % 8
+                            or values['parent'] != context - 0x80
+                            or values['child'] % 8 or values['child_vtable'] % 8):
+                        raise ValueError('incompatible adapter layout')
+                    candidates += 1
+                else:
+                    raise ValueError('unknown forwarding status')
+            except (KeyError, TypeError, ValueError):
+                errors.append('invalid_forwarding_snapshot')
+    return dict(context_forwarding_status=('complete' if not errors else 'rejected') if observed else 'not_observed',
+                context_forwarding_errors=sorted(set(errors)),
+                context_forwarding_candidates=candidates if not errors else 0,
+                context_forwarding_rejected=rejected,
+                context_forwarding_dispatch_observed=False)
+
+
 def analyze(events):
     errors = []
     def rows(phase):
@@ -208,7 +260,7 @@ def analyze(events):
                 missing=['GPU constant-buffer/root binding and bytes at the depth-writing draw',
                          'actual raster viewport/scissor and jitter convention',
                          'view transform and depth-to-postprocessed-color/TAA history mapping'],
-                **analyze_context_scopes(events))
+                **analyze_context_scopes(events), **analyze_context_forwarding(events))
 
 
 def main():

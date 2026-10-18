@@ -51,7 +51,7 @@ jobs:
             camera_probe = 'yaw_preserves_position_and_rotates_local_basis'
             projection_probe = 'projection_snapshot_filters_and_preserves'
             frame_pair_probe = 'pair_ledger_requires_same_recording|pair_failure_is_terminal'
-            live_pair_stream = 'stream_ring_ownership_and_validation|stream_frame_provenance_rejects_mismatches|stream_projection_observer_is_unassociated_and_bounded|render_context_scope_is_bounded_and_thread_local|projection_helper_preserves_cpu_invocation_scope'
+            live_pair_stream = 'stream_ring_ownership_and_validation|stream_frame_provenance_rejects_mismatches|stream_projection_observer_is_unassociated_and_bounded|render_context_scope_is_bounded_and_thread_local|projection_helper_preserves_cpu_invocation_scope|context_forwarding_is_guarded_and_immutable'
             live_stereo = 'projection_contract_validation|projection_shader_mode_isolation|live_stereo_depth_order_oracle'
             xr_display_probe = 'window_frame_preserves_channels_stride_and_aspect|head_rotation_recenters_clamps_and_uses_local_axes|static_stereo_preserves_eye_order_and_rejects_bad_size|stereo_frame_expiry_releases_both_eyes_and_ends_frame|presentation_settings_and_timing_statistics'
           }
@@ -62,7 +62,7 @@ jobs:
       - name: Compile optional frame and context diagnostics (no game or GPU tests)
         shell: pwsh
         run: |
-          cmake -S native/live_pair_stream -B out/ci/live_pair_trace -G "Visual Studio 17 2022" -A x64 -DAC6_FRAME_TRACE=ON -DAC6_RENDER_CONTEXT_TRACE=ON -DLIVE_PAIR_PROBE_NAME=ac6_live_pair_probe_v99
+          cmake -S native/live_pair_stream -B out/ci/live_pair_trace -G "Visual Studio 17 2022" -A x64 -DAC6_FRAME_TRACE=ON -DAC6_RENDER_CONTEXT_TRACE=ON -DAC6_CONTEXT_FORWARD_TRACE=ON -DLIVE_PAIR_PROBE_NAME=ac6_live_pair_probe_v99
           if ($LASTEXITCODE -ne 0) { throw 'Frame trace configure failed' }
           cmake --build out/ci/live_pair_trace --config Release --parallel 2
           if ($LASTEXITCODE -ne 0) { throw 'Frame trace build failed' }

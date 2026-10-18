@@ -115,7 +115,8 @@ pruebas con GPU local**.
    nuevo obtuvo 128 muestras dentro de 64 invocaciones CPU, tres pares con
    procedencia completa, una cola y nueve hooks restaurados. Es identidad
    de scope CPU, sin asociación de la matriz con esos pares.
-   El siguiente forwarding virtual y su uso por GPU siguen sin observarse.
+   El siguiente forwarding virtual y su uso por GPU siguen sin observarse;
+   v24 prepara su lectura acotada al entrar, opcional y probada solo en host.
 2. **Geometría del visor y escala:** integrar poses/FOV por ojo, establecer
    unidades/IPD y presentación adecuada; validar físicamente antes de cambiar
    la ruta por defecto. La preparación host no acredita esas capacidades.

@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <utility>
+#include "context_forwarding_trace.hpp"
 
 namespace frame_trace {
 struct ContextInvocation {
@@ -31,16 +32,16 @@ inline ContextInvocation CurrentContextInvocation() noexcept { return render_con
 // Known Win64 ABI: RCX=scene, RDX=context interface, R8=input packet. The routine
 // builds local matrices, reads vtable[5], and calls vtable[1](context,localPacket,0).
 // Raw full .pdata establishes [0x26e17f0,0x26e1da4); a partial parsed .pdata list
-// is insufficient. We read only the interface/vtable pointers, never matrices,
-// scene contents, packet contents, or virtual implementation code.
+// is insufficient. The further opt-in forwarding reader follows only the pinned
+// adapter layout at entry; never matrices, scene/packet contents or target code.
 // Targets are candidates sampled at invocation entry; this does not observe
 // an actual indirect dispatch or prove that the vtable stays unchanged.
 class RenderContextObserver {
     enum class Window : unsigned char { Paused, Observing, Stopped };
 public:
     static constexpr std::size_t Capacity = 64;
-    explicit RenderContextObserver(bool initially_observing = true) noexcept
-        : window_(initially_observing ? Window::Observing : Window::Paused) {}
+    explicit RenderContextObserver(bool initially_observing = true,ContextForwardingLayout forwarding={}) noexcept
+        : window_(initially_observing ? Window::Observing : Window::Paused),forwarding_(forwarding) {}
     RenderContextObserver(const RenderContextObserver&) = delete;
     RenderContextObserver& operator=(const RenderContextObserver&) = delete;
 
@@ -52,6 +53,9 @@ public:
             GetModuleHandleW(L"EasyAntiCheat_EOS.dll") || GetModuleHandleW(L"EasyAntiCheat.dll")) return false;
         auto* target = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(game) + 0x26e17f0);
         if (!MatchesPrologue(target)) return false;
+#ifdef AC6_CONTEXT_FORWARD_TRACE
+        if(!LoadGameForwardingLayout(game,forwarding_)) return false;
+#endif
         if (MH_CreateHook(target, reinterpret_cast<void*>(&Detour),
                           reinterpret_cast<void**>(&original_)) != MH_OK) return false;
         target_ = target;
@@ -95,6 +99,7 @@ public:
         }
         LARGE_INTEGER begin{}, end{};
         if (index < Capacity) QueryPerformanceCounter(&begin);
+        const auto forwarding=index<Capacity?ReadContextForwarding(token,forwarding_):ContextForwardingSnapshot{};
         void* result;
         try {
             result = std::forward<Original>(original)(scene, context, packet);
@@ -106,7 +111,7 @@ public:
         }
         if (index < Capacity) {
             QueryPerformanceCounter(&end);
-            Publish(index, token, begin.QuadPart, end.QuadPart);
+            Publish(index, token, begin.QuadPart, end.QuadPart,forwarding);
         }
         return result;
     }
@@ -135,12 +140,14 @@ public:
                        "\"vtable\":\"0x%llx\",\"slot1_target\":\"0x%llx\",\"slot5_target\":\"0x%llx\","
                        "\"thread\":%u,\"begin_qpc\":%lld,\"end_qpc\":%lld,"
                        "\"targets_sampled_at\":\"invocation_entry\",\"virtual_dispatch_observed\":false,"
-                       "\"frame_associated\":false,\"gpu_binding_observed\":false}\n",
+                       "\"frame_associated\":false,\"gpu_binding_observed\":false",
                        static_cast<unsigned long long>(c.ordinal), static_cast<unsigned long long>(c.scene),
                        static_cast<unsigned long long>(c.context), static_cast<unsigned long long>(c.packet),
                        static_cast<unsigned long long>(c.vtable), static_cast<unsigned long long>(c.slot1_target),
                        static_cast<unsigned long long>(c.slot5_target), unsigned(c.thread),
                        static_cast<long long>(e.begin_qpc), static_cast<long long>(e.end_qpc))) return false;
+            if(forwarding_.Enabled()&&!WriteContextForwarding(file,e.forwarding)) return false;
+            if(!print("}\n")) return false;
         }
         LARGE_INTEGER frequency{};
         QueryPerformanceFrequency(&frequency);
@@ -149,13 +156,14 @@ public:
                      "\"calls\":%llu,\"invalid\":%llu,\"reserved\":%llu,\"overflow\":%llu,\"samples\":%u,"
                      "\"sample_limit_reached\":%s,\"incomplete_slots\":%u,\"in_flight\":%llu,\"snapshot_complete\":%s,"
                      "\"targets_sampled_at\":\"invocation_entry\",\"virtual_dispatch_observed\":false,"
-                     "\"frame_associated\":false,\"gpu_binding_observed\":false,\"storage_retained\":true}\n",
+                     "\"frame_associated\":false,\"gpu_binding_observed\":false,\"storage_retained\":true%s}\n",
                      static_cast<long long>(frequency.QuadPart), unsigned(Capacity),
                      static_cast<unsigned long long>(calls), static_cast<unsigned long long>(invalid),
                      static_cast<unsigned long long>(reserved),
                      static_cast<unsigned long long>(reserved > Capacity ? reserved - Capacity : 0), unsigned(saved),
                      reserved >= Capacity ? "true" : "false", unsigned(limit - saved),
-                     static_cast<unsigned long long>(active), active == 0 && saved == limit ? "true" : "false") &&
+                     static_cast<unsigned long long>(active), active == 0 && saved == limit ? "true" : "false",
+                     forwarding_.Enabled()?",\"forwarding_enabled\":true":"") &&
                !std::ferror(file);
     }
 
@@ -164,6 +172,7 @@ private:
     using OriginalFn = void*(__fastcall*)(void*, void*, void*);
     struct Entry {
         ContextInvocation identity{};
+        ContextForwardingSnapshot forwarding{};
         std::int64_t begin_qpc = 0, end_qpc = 0;
         std::atomic<bool> ready{false};
     };
@@ -182,6 +191,7 @@ private:
                   std::atomic<RenderContextObserver*>::is_always_lock_free, "Callback requires lock-free atomics");
     std::array<Entry, Capacity> entries_{};
     std::atomic<Window> window_;
+    ContextForwardingLayout forwarding_{};
     std::atomic<std::uint64_t> calls_{0}, invalid_{0}, reserved_{0}, in_flight_{0};
     OriginalFn original_ = nullptr;
     void* target_ = nullptr;
@@ -194,11 +204,13 @@ private:
         if (index >= Capacity - 1) Stop();
         return index < Capacity ? static_cast<std::size_t>(index) : Capacity;
     }
-    void Publish(std::size_t index, const ContextInvocation& token, std::int64_t begin, std::int64_t end) noexcept {
+    void Publish(std::size_t index, const ContextInvocation& token, std::int64_t begin, std::int64_t end,
+                 const ContextForwardingSnapshot& forwarding) noexcept {
         auto& entry = entries_[index];
         entry.identity = token;
         entry.begin_qpc = begin;
         entry.end_qpc = end;
+        entry.forwarding=forwarding;
         // Sole publication; payload is never modified again.
         entry.ready.store(true, std::memory_order_release);
     }
