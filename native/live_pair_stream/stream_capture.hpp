@@ -3,6 +3,9 @@
 #include "../frame_pair_probe/pair_capture.hpp"
 #include <vector>
 #include <new>
+#ifdef AC6_FRAME_TRACE
+#include "frame_trace.hpp"
+#endif
 namespace live_pair {
 struct StreamCapture : frame_pair::Capture {
     Header* shared=nullptr;
@@ -16,6 +19,10 @@ struct StreamCapture : frame_pair::Capture {
     std::vector<HANDLE> handles;
     ComPtr<ID3D12CommandQueue> source_queue;
     bool depth_since_capture=false;
+#ifdef AC6_FRAME_TRACE
+    frame_trace::Trace trace;
+    void WriteFrameTrace(FILE* log) { std::lock_guard lock(mutex);trace.Write(log); }
+#endif
     struct QueueObservation {
         frame_pair::Id identity=0,device_identity=0;
         D3D12_COMMAND_LIST_TYPE type=D3D12_COMMAND_LIST_TYPE_DIRECT;
@@ -105,6 +112,10 @@ struct StreamCapture : frame_pair::Capture {
         try {
             std::lock_guard lock(mutex);
             if(stage.load()!=Armed) { forwarded=true;original(queue,n,lists);return; }
+#ifdef AC6_FRAME_TRACE
+            LARGE_INTEGER observation_qpc{};QueryPerformanceCounter(&observation_qpc);
+            trace.BeginSubmission(reinterpret_cast<frame_pair::Id>(queue),observation_qpc.QuadPart);
+#endif
             ObserveQueue(queue,n,lists);
             const auto id=reinterpret_cast<frame_pair::Id>(queue);
             if(execution_queue&&execution_queue!=id) { multiple_queues=true;Fail(); }
@@ -112,6 +123,9 @@ struct StreamCapture : frame_pair::Capture {
             UINT mask=0;
             for(UINT i=0;i<n;++i) {
                 auto summary=ledger->Snapshot(reinterpret_cast<frame_pair::Id>(lists[i]));
+#ifdef AC6_FRAME_TRACE
+                trace.Observe(reinterpret_cast<frame_pair::Id>(lists[i]),i,summary);
+#endif
                 if(!summary.trusted||summary.aliasing) { executed_depth_known=false;depth_since_capture=false;mask=0;continue; }
                 if(summary.depth_touched) { executed_depth_known=summary.depth_known;executed_depth_state=summary.depth_state;depth_since_capture=summary.depth_known; }
                 mask=(mask&~summary.color_touched)|summary.color_present;
@@ -124,7 +138,12 @@ struct StreamCapture : frame_pair::Capture {
             if(ready==UINT64_MAX||done==UINT64_MAX) { Fail();forwarded=true;original(queue,n,lists);return; }
             int selected=-1;
             for(unsigned s=0;s<3;++s) if(Reusable(Read64(shared->slots[s].sequence),ready,done)) { selected=s;break; }
-            if(selected<0) { ++dropped;depth_since_capture=false;forwarded=true;original(queue,n,lists);return; }
+            if(selected<0) {
+#ifdef AC6_FRAME_TRACE
+                trace.CloseOnBackpressure();
+#endif
+                ++dropped;depth_since_capture=false;forwarded=true;original(queue,n,lists);return;
+            }
             UINT index=0;while(!(mask&(1u<<index))) ++index;
             ComPtr<ID3D12Resource> color;
             if(FAILED(swap->GetBuffer(index,IID_PPV_ARGS(&color)))||reinterpret_cast<frame_pair::Id>(color.Get())!=colors[index]||!CompatibleColor(color.Get())) { Fail();forwarded=true;original(queue,n,lists);return; }
@@ -134,8 +153,13 @@ struct StreamCapture : frame_pair::Capture {
             const UINT64 next=frames+1;
             if(FAILED(queue->Signal(fence.Get(),next))) { Fail();return; }
             frames=next;depth_since_capture=false;
-            InterlockedExchange64(&shared->slots[selected].tick,GetTickCount64());
+            const auto tick=GetTickCount64();
+            InterlockedExchange64(&shared->slots[selected].tick,tick);
             InterlockedExchange64(&shared->slots[selected].sequence,next);
+#ifdef AC6_FRAME_TRACE
+            trace.Publish(next,selected,index,reinterpret_cast<frame_pair::Id>(depth.Get()),colors[index],tick);
+            trace.RetireDepth();
+#endif
         } catch(...) { Fail();if(!forwarded) original(queue,n,lists); }
     }
     void StopStream() {

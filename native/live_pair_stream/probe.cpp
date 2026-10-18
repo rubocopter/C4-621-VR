@@ -4,6 +4,15 @@
 #include <MinHook.h>
 #include <filesystem>
 #include <cwchar>
+#ifdef AC6_FRAME_TRACE
+#include "projection_observer.hpp"
+#ifdef AC6_RENDER_CONTEXT_TRACE
+static auto* projection_observer=new frame_trace::ProjectionObserver(false,true);
+static auto* render_context_observer=new frame_trace::RenderContextObserver(false);
+#else
+static auto* projection_observer=new frame_trace::ProjectionObserver(false);
+#endif
+#endif
 extern "C" size_t PairPresentSlot(void),PairExecuteSlot(void),PairBarrierSlot(void),PairResetSlot(void),PairCloseSlot(void),PairResizeSlot(void),PairResize1Slot(void);
 using namespace live_pair;
 using namespace frame_pair;
@@ -19,6 +28,22 @@ static CloseFn original_close=nullptr;
 static ResizeFn original_resize=nullptr;
 static Resize1Fn original_resize1=nullptr;
 static auto* capture=new StreamCapture; // retained, including on failure/in-flight work
+#ifdef AC6_FRAME_TRACE
+static void VerifyTraceFixture() {
+    const auto& t=capture->trace;
+    if(t.pair_count!=3||t.overflow||!t.window_closed||t.omitted_pairs!=1)
+        throw std::runtime_error("GPU fixture must retain three pairs and report the resumed capture as omitted");
+    const auto& a=t.pairs[0];const auto& repeated=t.pairs[1];const auto& changed=t.pairs[2];
+    for(unsigned i=0;i<t.pair_count;++i) {
+        const auto& p=t.pairs[i];
+        if(!p.depth.valid||!p.color.valid||p.sequence!=i+1||p.depth.submit>=p.copy_submit||p.color.submit!=p.copy_submit||
+           p.depth_resource!=reinterpret_cast<frame_pair::Id>(capture->depth.Get())||p.color_resource!=capture->colors[p.backbuffer])
+            throw std::runtime_error("Trace must identify separate executed depth/color sources of the GPU-verified pair");
+    }
+    if(a.depth.recording!=repeated.depth.recording||a.depth.list!=repeated.depth.list||a.depth.submit==repeated.depth.submit||
+       a.depth.recording==changed.depth.recording) throw std::runtime_error("Repeated execution and a new recording must remain distinct");
+}
+#endif
 static HMODULE module=nullptr;
 static HRESULT STDMETHODCALLTYPE Present(IDXGISwapChain* s,UINT sync,UINT flags) {
     try { capture->Present(s,flags); } catch(...) { capture->Fail(); }
@@ -53,6 +78,12 @@ static void GateFixture(PairFixture& fixture) {
     if(capture->frames!=3||capture->fence->GetCompletedValue()!=0) throw std::runtime_error("Producer gate did not keep readiness pending");
     Check(capture->released->Signal(3),"Advance release before producer completion");submit(true,false);
     if(capture->frames!=3) throw std::runtime_error("Slot reused before BOTH fences completed");
+#ifdef AC6_FRAME_TRACE
+    // Real v17 saturated its diagnostic list store AFTER the three captured
+    // pairs. Reproduce the no-consumer tail without running a game.
+    for(unsigned i=0;i<frame_trace::Trace::ListCapacity+1;++i) submit(true,false);
+    if(capture->trace.overflow) throw std::runtime_error("Post-backpressure tail overflowed the captured trace window");
+#endif
     Check(gate->Signal(1),"Open producer gate");
     const auto until=GetTickCount64()+5000;while(capture->fence->GetCompletedValue()<3&&GetTickCount64()<until) Sleep(1);
     if(capture->fence->GetCompletedValue()<3||capture->fence->GetCompletedValue()==UINT64_MAX) TerminateProcess(GetCurrentProcess(),3);
@@ -72,6 +103,7 @@ int RunLivePairProbe(bool self_test,bool gate_test=false) {
     const auto name=L"Local\\AC6PairStream_"+stem+L"_"+std::to_wstring(GetCurrentProcessId());
     std::array<void*,7> targets{}; std::array<std::array<unsigned char,16>,7> before{};
     bool activation_attempted=false;
+    bool ever_activation_attempted=false,hook_baselines_captured=false;
     try {
         if(!self_test&&(!GetModuleHandleW(L"armoredcore6.exe")||!GetModuleHandleW(L"ac6_coop.dll")||GetModuleHandleW(L"EasyAntiCheat_EOS.dll")||GetModuleHandleW(L"EasyAntiCheat.dll"))) throw std::runtime_error("Host rejected");
         PairFixture fixture;
@@ -79,12 +111,26 @@ int RunLivePairProbe(bool self_test,bool gate_test=false) {
         auto method=[](void* p,size_t slot) { return (*reinterpret_cast<void***>(p))[slot]; };
         targets={method(swap.Get(),PairPresentSlot()),method(fixture.queue.Get(),PairExecuteSlot()),method(fixture.list.Get(),PairBarrierSlot()),method(fixture.list.Get(),PairResetSlot()),method(fixture.list.Get(),PairCloseSlot()),method(swap.Get(),PairResizeSlot()),method(swap.Get(),PairResize1Slot())};
         auto status=MH_Initialize(); if(status!=MH_OK) throw std::runtime_error(MH_StatusToString(status));
+#ifdef AC6_FRAME_TRACE
+        if(!self_test&&!projection_observer->CreateHook()) throw std::runtime_error("Projection helper fingerprint/hook rejected");
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        if(!self_test&&!render_context_observer->CreateHook()) throw std::runtime_error("Render context fingerprint/hook rejected");
+#endif
+#endif
         const std::array<void*,7> detours={reinterpret_cast<void*>(&Present),reinterpret_cast<void*>(&Execute),reinterpret_cast<void*>(&Barrier),reinterpret_cast<void*>(&Reset),reinterpret_cast<void*>(&Close),reinterpret_cast<void*>(&Resize),reinterpret_cast<void*>(&Resize1)};
         const std::array<void**,7> originals={reinterpret_cast<void**>(&original_present),reinterpret_cast<void**>(&original_execute),reinterpret_cast<void**>(&original_barrier),reinterpret_cast<void**>(&original_reset),reinterpret_cast<void**>(&original_close),reinterpret_cast<void**>(&original_resize),reinterpret_cast<void**>(&original_resize1)};
         for(unsigned i=0;i<7;++i) std::memcpy(before[i].data(),targets[i],16);
+        hook_baselines_captured=true;
         for(unsigned i=0;i<7;++i) { status=MH_CreateHook(targets[i],detours[i],originals[i]); if(status!=MH_OK) throw std::runtime_error(MH_StatusToString(status)); }
-        activation_attempted=true; status=MH_EnableHook(MH_ALL_HOOKS); if(status!=MH_OK) throw std::runtime_error(MH_StatusToString(status));
-        std::fprintf(log,"{\"phase\":\"observing\",\"pid\":%lu,\"bounded_seconds\":60}\n",GetCurrentProcessId()); std::fflush(log);
+        activation_attempted=true; ever_activation_attempted=true; status=MH_EnableHook(MH_ALL_HOOKS); if(status!=MH_OK) throw std::runtime_error(MH_StatusToString(status));
+        constexpr unsigned bounded_seconds=
+#ifdef AC6_FRAME_TRACE
+            8;
+        std::fprintf(log,"{\"phase\":\"frame_trace_enabled\",\"game_base\":\"0x%llx\",\"projection_helper_rva\":\"0x23a7790\",\"projection_to_gpu_binding_observed\":false}\n",reinterpret_cast<UINT64>(GetModuleHandleW(L"armoredcore6.exe")));
+#else
+            60;
+#endif
+        std::fprintf(log,"{\"phase\":\"observing\",\"pid\":%lu,\"bounded_seconds\":%u}\n",GetCurrentProcessId(),bounded_seconds); std::fflush(log);
         if(self_test&&gate_test) {
             fixture.Frame(0);capture->PrepareStream(name);GateFixture(fixture);
             std::fprintf(log,"{\"phase\":\"gate_fixture\",\"pending_ready_prevents_reuse\":true,\"one_execute\":true,\"new_depth_required\":true,\"ledger_failure_published\":true}\n");
@@ -96,20 +142,45 @@ int RunLivePairProbe(bool self_test,bool gate_test=false) {
             if(!capture->VerifyFixtureSlot(2,0.9f,205|(512<<10)|(921<<20))) throw std::runtime_error("Third slot did not preserve changed frame2 depth/color");
             Check(capture->released->Signal(3),"Fixture release"); fixture.Frame(2);
             if(capture->frames!=4) throw std::runtime_error("Released ring did not resume");
+#ifdef AC6_FRAME_TRACE
+            VerifyTraceFixture();
+#endif
             Check(swap->ResizeBuffers(2,640,360,DXGI_FORMAT_R10G10B10A2_UNORM,0),"Resize must not be blocked by retained backbuffer refs");
             if(!capture->failed.load()) throw std::runtime_error("Resize did not stop capture");
             std::fprintf(log,"{\"phase\":\"fixture_validation\",\"pairs_match\":true,\"backpressure_drop\":true,\"release_resumes\":true,\"resize_cancels\":true}\n");
         } else {
             const auto started=GetTickCount64(); bool published=false;
-            while(GetTickCount64()-started<60000 && !(GetAsyncKeyState(VK_F12)&0x8000) && !capture->failed.load()) {
+            while(GetTickCount64()-started<bounded_seconds*1000 && !(GetAsyncKeyState(VK_F12)&0x8000) && !capture->failed.load()) {
                 if(capture->shared&&Read32(capture->shared->stop_requested)) break;
                 if(GetTickCount64()-started>=2000 && capture->stage.load()==Capture::Collecting) capture->PrepareStream(name);
+#ifdef AC6_FRAME_TRACE
+#ifdef AC6_RENDER_CONTEXT_TRACE
+                if(capture->stage.load()==Capture::Armed) render_context_observer->BeginWindow();
+#endif
+                if(capture->stage.load()==Capture::Armed) projection_observer->BeginWindow();
+#endif
                 if(capture->shared&&!published) { published=true; std::fprintf(log,"{\"phase\":\"stream_ready\",\"mapping_suffix\":\"%ls_%lu\",\"width\":%u,\"height\":%u}\n",stem.c_str(),GetCurrentProcessId(),capture->shared->width,capture->shared->height); std::fflush(log); }
                 Sleep(5);
             }
         }
-        capture->StopStream(); status=MH_DisableHook(MH_ALL_HOOKS); if(status!=MH_OK) throw std::runtime_error(MH_StatusToString(status)); activation_attempted=false;
+        capture->StopStream();
+#ifdef AC6_FRAME_TRACE
+        projection_observer->Stop();
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        render_context_observer->Stop();
+#endif
+#endif
+        status=MH_DisableHook(MH_ALL_HOOKS); if(status!=MH_OK) throw std::runtime_error(MH_StatusToString(status)); activation_attempted=false;
         bool restored=true; for(unsigned i=0;i<7;++i) restored=restored&&std::memcmp(before[i].data(),targets[i],16)==0;
+#ifdef AC6_FRAME_TRACE
+        restored=restored&&(self_test||projection_observer->HookRestored());
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        restored=restored&&(self_test||render_context_observer->HookRestored());
+        if(!render_context_observer->Write(log)) throw std::runtime_error("Write render context diagnostics failed");
+#endif
+        capture->WriteFrameTrace(log);
+        if(!projection_observer->Write(log)) throw std::runtime_error("Write projection diagnostics failed");
+#endif
         for(UINT i=0;i<capture->queue_observation_count;++i) {
             const auto& q=capture->queue_observations[i];
             if(std::fprintf(log,"{\"phase\":\"queue_observation\",\"queue\":\"0x%llx\",\"device\":\"0x%llx\",\"type\":%u,\"same_device\":%s,\"submissions\":%u,\"lists\":%u,\"untrusted\":%u,\"depth_lists\":%u,\"color_lists\":%u,\"aliasing\":%u}\n",static_cast<unsigned long long>(q.identity),static_cast<unsigned long long>(q.device_identity),unsigned(q.type),q.same_device?"true":"false",q.submissions,q.lists,q.untrusted,q.depth_lists,q.color_lists,q.aliasing)<0) throw std::runtime_error("Write queue diagnostic failed");
@@ -126,9 +197,21 @@ int RunLivePairProbe(bool self_test,bool gate_test=false) {
         return restored&&capture->frames>0&&(self_test||!capture->failed.load())?0:2;
     } catch(const std::exception& error) {
         capture->Fail();
+#ifdef AC6_FRAME_TRACE
+        projection_observer->Stop();
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        render_context_observer->Stop();
+#endif
+#endif
         if(activation_attempted) { const auto cleanup=MH_DisableHook(MH_ALL_HOOKS);std::fprintf(log,"{\"phase\":\"cleanup\",\"status\":\"%s\"}\n",MH_StatusToString(cleanup)); }
         bool restored=true;for(unsigned i=0;i<7;++i) if(targets[i]) restored=restored&&std::memcmp(before[i].data(),targets[i],16)==0;
-        std::fprintf(log,"{\"phase\":\"failed\",\"message\":\"%s\"}\n",error.what());
+#ifdef AC6_FRAME_TRACE
+        restored=restored&&(self_test||projection_observer->HookRestored());
+#ifdef AC6_RENDER_CONTEXT_TRACE
+        restored=restored&&(self_test||render_context_observer->HookRestored());
+#endif
+#endif
+        std::fprintf(log,"{\"phase\":\"failed\",\"message\":\"%s\",\"hook_activation_attempted\":%s,\"hook_baselines_captured\":%s}\n",error.what(),ever_activation_attempted?"true":"false",hook_baselines_captured?"true":"false");
         std::fprintf(log,"{\"phase\":\"disabled\",\"hooks_restored\":%s,\"dll_retained_inactive\":true}\n",restored?"true":"false");std::fclose(log);return 1;
     }
 }

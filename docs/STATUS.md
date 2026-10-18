@@ -97,6 +97,29 @@ pruebas con GPU local**.
    demostrar identidad temporal de matriz, cámara, viewport y jitter con el
    envío elegible. Solo después diseñar metadata versionada por secuencia/slot,
    rechazando ausencias/desajustes. No generalizar matrices de una captura.
+   Preparación host posterior: [traza opcional de procedencia por envío y
+   grabación](FRAME_PROJECTION_PROVENANCE.md), con helper explícitamente sin
+   asociación y sin cambios al transporte/presentación. Falta el binding GPU.
+   La observación presencial v17 recogió 3 pares y 256 salidas del helper
+   (70 direcciones de vista / 10 modelos), pero agotó la traza de listas:
+   análisis rechazado. El cierre al primer backpressure se corrigió y verificó
+   en v18: 3 pares, 214 listas, cero overflow/pares omitidos y fuentes resueltas;
+   77 direcciones de vista/11 modelos. Hooks restaurados y juego respondiendo.
+   Es procedencia de transiciones, sin binding de matriz por par ni prueba VR.
+   [Continuación host](RENDER_CONTEXT_PROVENANCE.md): localizada la entrega de
+   un paquete CPU a un contexto virtual y preparada sonda opcional para
+   identificar ese contexto y sus llamadas anidadas al helper. v20 identificó
+   un adaptador CPU concreto, pero se detuvo por segunda cola COPY; captura
+   rechazada, nueve hooks restaurados y juego respondiendo. Cero muestras
+   del helper dentro del scope en v20. La repetición presencial v22 en PID
+   nuevo obtuvo 128 muestras dentro de 64 invocaciones CPU, tres pares con
+   procedencia completa, una cola y nueve hooks restaurados. Es identidad
+   de scope CPU, sin asociación de la matriz con esos pares.
+   El siguiente forwarding virtual y su uso por GPU siguen sin observarse;
+   v24 se rechazó antes de habilitar hooks por dos secciones PE `.text`.
+   v26 corrige ese caso y completa captura con nueve hooks restaurados, pero
+   cero invocaciones del contexto: interfaz hija no observada. v28, solo host,
+   registra apertura de ventana y clasifica la publicación vacía `no_coverage`.
 2. **Geometría del visor y escala:** integrar poses/FOV por ojo, establecer
    unidades/IPD y presentación adecuada; validar físicamente antes de cambiar
    la ruta por defecto. La preparación host no acredita esas capacidades.

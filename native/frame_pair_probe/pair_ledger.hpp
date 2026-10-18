@@ -8,11 +8,16 @@ namespace frame_pair {
 using Id=std::uintptr_t;
 class Ledger {
 public:
-    struct Summary { bool trusted=false,aliasing=false,depth_touched=false,depth_known=false; UINT depth_state=0,color_touched=0,color_present=0; };
+    struct Summary { bool trusted=false,aliasing=false,depth_touched=false,depth_known=false; UINT depth_state=0,color_touched=0,color_present=0;
+#ifdef AC6_FRAME_TRACE
+        std::uint64_t recording=0,depth_transition=0;
+        std::array<std::uint64_t,3> color_transition{};
+#endif
+    };
     Ledger(Id depth,std::array<Id,3> colors):depth_(depth),colors_(colors) {}
     void Reset(Id list) {
-        for(auto& e:lists_) if(e.list.load()==list) { std::lock_guard lock(e.mutex); if(e.list.load()!=list) continue; e.updates={}; e.aliasing=false; e.open=true; e.closed=false; return; }
-        for(auto& e:lists_) { Id empty=0; if(e.list.compare_exchange_strong(empty,list)) { std::lock_guard lock(e.mutex); e.updates={}; e.aliasing=false; e.open=true; e.closed=false; return; } }
+        for(auto& e:lists_) if(e.list.load()==list) { std::lock_guard lock(e.mutex); if(e.list.load()!=list) continue; Start(e); return; }
+        for(auto& e:lists_) { Id empty=0; if(e.list.compare_exchange_strong(empty,list)) { std::lock_guard lock(e.mutex); Start(e); return; } }
         unsafe.store(true);
     }
     void Forget(Id list) { for(auto& e:lists_) if(e.list.load()==list) { std::lock_guard lock(e.mutex); if(e.list.load()!=list) continue; e.updates={}; e.aliasing=false; e.open=e.closed=false; e.list.store(0); return; } }
@@ -28,6 +33,10 @@ public:
         for(const auto& e:lists_) if(e.list.load()==list) {
             std::lock_guard lock(e.mutex); if(e.list.load()!=list || !e.closed) return {};
             Summary s; s.trusted=true; s.aliasing=e.aliasing;
+#ifdef AC6_FRAME_TRACE
+            s.recording=e.recording;s.depth_transition=e.transitions[0];
+            for(unsigned i=0;i<3;++i) s.color_transition[i]=e.transitions[i+1];
+#endif
             s.depth_touched=e.updates[0].touched; s.depth_known=e.updates[0].known; s.depth_state=e.updates[0].value;
             for(unsigned i=0;i<3;++i) if(e.updates[i+1].touched) { s.color_touched|=1u<<i; if(e.updates[i+1].known && !e.updates[i+1].value) s.color_present|=1u<<i; }
             return s;
@@ -54,6 +63,9 @@ public:
         if(found->list.load()!=list || !found->open) return;
         if(alias) { found->aliasing=true; return; }
         const auto& t=barrier.Transition;
+#ifdef AC6_FRAME_TRACE
+        found->transitions[index]=++found->transition_count;
+#endif
         auto& update=found->updates[index]; update.touched=true;
         update.known=barrier.Flags!=D3D12_RESOURCE_BARRIER_FLAG_BEGIN_ONLY;
         update.value=t.StateAfter;
@@ -74,7 +86,21 @@ private:
     struct Update { bool touched=false,known=false; UINT value=0; };
     // D3D12 requires the caller to serialize recording methods on each list.
     // Independent lists use separate entries; only slot identity is shared.
-    struct Entry { std::atomic<Id> list{0}; mutable std::mutex mutex; std::array<Update,4> updates{}; bool aliasing=false,open=false,closed=false; };
+    struct Entry { std::atomic<Id> list{0}; mutable std::mutex mutex; std::array<Update,4> updates{}; bool aliasing=false,open=false,closed=false;
+#ifdef AC6_FRAME_TRACE
+        std::uint64_t recording=0,transition_count=0;
+        std::array<std::uint64_t,4> transitions{};
+#endif
+    };
+    void Start(Entry& e) {
+        e.updates={};e.aliasing=false;e.open=true;e.closed=false;
+#ifdef AC6_FRAME_TRACE
+        e.recording=++recordings_;e.transition_count=0;e.transitions={};
+#endif
+    }
+#ifdef AC6_FRAME_TRACE
+    std::atomic<std::uint64_t> recordings_{0};
+#endif
     std::array<Entry,2048> lists_{};
 };
 }
