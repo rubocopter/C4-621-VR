@@ -260,6 +260,11 @@ comodidad prolongada. Evidencia privada en
 Continuación independiente, aún solo host: [intrínsecos distintos por ojo](docs/EYE_PROJECTION_CONTRACT.md).
 La aceptación física anterior corresponde al PR #4 y no al modo nuevo.
 
+Corrección posterior de las referencias offline: [orden de profundidad y límites
+numéricos](docs/DEPTH_REFERENCE_PRECISION.md). Se reproduce selección CPU incorrecta
+por distancias float64 redondeadas iguales y se compara con GPU real sin cambiar
+el shader, la presentación ni las protecciones del stream.
+
 ## Desarrollo de presentación binocular: historial de la fase inicial
 
 ### Prueba de escena fija en PSVR2

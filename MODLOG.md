@@ -245,3 +245,21 @@ La primera persona ya está probada por el usuario y Depth of Field ya está des
 - Cierre local: 33 pruebas Python, 16 CTests pertinentes y compilación del
   consumidor, offline y presentador correctos. La última suite completa del
   consumidor pasa los diez tests. No se ejecutó otro ensayo en el juego/visor.
+
+## 2026-10-18 — precisión de referencias CPU y comparación directa con GPU
+
+- Rama `codex/depth-reference-precision-20261018`, base `5edd130`; los PR #4/#5
+  se conservan abiertos. Sin interacción con AC6/SteamVR ni cambios de shader,
+  consumidor live, presentación o protocolos binarios.
+- RED: dos device depths distintas reconstruyen la misma distancia float64 y
+  las referencias CPU eligen el píxel lejano; la GPU existente elige el cercano.
+  Se usa orden monotónico del depth original según B, con desempate por índice.
+- La referencia de proyección elimina umbrales absolutos de unidades, exige la
+  forma canónica soportada y rechaza resultados no finitos. La clasificación
+  reverse-Z tampoco depende ya de comparar endpoints redondeados.
+- GREEN: 41 tests Python, incluidos 16 fixtures directos Python/GPU/ganador
+  literal, y 37 casos internos GPU con índices/RGBA exactos. Compilación y sintaxis
+  correctas; revisión independiente sin hallazgos. El test GPU se omite de forma
+  explícita cuando no se configura su ejecutable.
+- Evidencia y comandos en `docs/DEPTH_REFERENCE_PRECISION.md`. Ninguna afirmación
+  nueva de calidad visual, rendimiento, escala métrica o comodidad en PSVR2.

@@ -14,6 +14,7 @@ This is the documentation entry point for **C4-621 VR**, an experimental Armored
 | *How does the D3D12 capture work?* | [Render capture](../RENDER_CAPTURE_FINDINGS.md) → [color/depth pairing](../FRAME_PAIR_FINDINGS.md) → [continuous GPU stream](../LIVE_STEREO_FINDINGS.md) |
 | *Where does stereo disparity come from?* | [Projection and offline stereo](../PROJECTION_FINDINGS.md) → [continuous stereo](../LIVE_STEREO_FINDINGS.md) |
 | *Can the consumer use different image intrinsics per eye?* | [Optional parallel-eye intrinsics: host contract and tests](EYE_PROJECTION_CONTRACT.md) |
+| *How do CPU and GPU choose the nearest depth sample?* | [Depth ownership, numerical limits and regression fixtures](DEPTH_REFERENCE_PRECISION.md) |
 | *How is head movement connected to the game?* | [Camera discovery](../CAMERA_FINDINGS.md) → [historical tracking runbook](../HEADTRACKING_RUNBOOK.md) → [VR display results](../VR_DISPLAY_FINDINGS.md) |
 | *Can I build and test it?* | [Reproducible Windows build](../BUILDING.md) → [CI workflow](../.github/workflows/ci.yml) → [native test sources](../native/) |
 | *What should be implemented next?* | [Roadmap and validation gates](../MODDING_PLAN.md) → [quality/pacing limits](../QUALITY_PACING_FINDINGS.md) |
