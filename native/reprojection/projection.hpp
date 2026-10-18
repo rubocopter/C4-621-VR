@@ -49,6 +49,33 @@ struct Perspective {
 // These describe rays only, not destination near/far clipping or eye rotation.
 struct RayIntrinsics {
     float fx=1,fy=1,cx=0,cy=0,wsign=1;
+    // Signed ray slopes X/forwardDistance and Y/forwardDistance at the edges.
+    // Not radians, clip distances, view poses, or a source-frame association.
+    // The caller must express both eyes in the same parallel view axes.
+    static RayIntrinsics FromFrustumTangents(double left,double right,double down,double up,float wsign) {
+        for(double edge:{left,right,down,up})
+            if(!std::isfinite(edge)) throw std::invalid_argument("Nonfinite frustum edge");
+        const double width=right-left,height=up-down;
+        if(!std::isfinite(width)||!std::isfinite(height)||width<=0||height<=0)
+            throw std::invalid_argument("Frustum edges must be ordered with finite positive spans");
+        const double fx=2/width,fy=2/height,cx=-(right+left)/width,cy=-(up+down)/height;
+        for(double value:{fx,fy,cx,cy})
+            if(!std::isfinite(value)||std::abs(value)>std::numeric_limits<float>::max()||
+               (value!=0&&std::abs(value)<std::numeric_limits<float>::min()))
+                throw std::invalid_argument("Frustum intrinsics outside normal float32 range");
+        RayIntrinsics result{float(fx),float(fy),float(cx),float(cy),wsign};
+        result.Validate();
+        return result;
+    }
+    // Signed radians measured from the forward ray, in the same view axes as
+    // FromFrustumTangents. A FOV carries no relative eye pose or metric scale.
+    static RayIntrinsics FromFovAngles(double left,double right,double down,double up,float wsign) {
+        constexpr double halfPi=1.57079632679489661923;
+        for(double angle:{left,right,down,up})
+            if(!std::isfinite(angle)||angle<=-halfPi||angle>=halfPi)
+                throw std::invalid_argument("FOV radians must lie strictly between -pi/2 and pi/2");
+        return FromFrustumTangents(std::tan(left),std::tan(right),std::tan(down),std::tan(up),wsign);
+    }
     void Validate() const {
         if(!std::isnormal(fx)||fx<=0||!std::isnormal(fy)||fy<=0||
            !std::isfinite(cx)||!std::isfinite(cy)||(wsign!=1&&wsign!=-1)||

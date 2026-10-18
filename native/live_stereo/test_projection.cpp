@@ -9,6 +9,34 @@ static void Reject(const std::function<void()>& action) {
     Require(rejected,"Invalid projection accepted");
 }
 int main() try {
+    for(float sign:{1.f,-1.f}) {
+        const auto rays=RayIntrinsics::FromFrustumTangents(-.375,.625,-.5,1.5,sign);
+        Require(rays.fx==2&&rays.fy==1&&rays.cx==-.25f&&rays.cy==-.5f&&rays.wsign==sign,"Asymmetric frustum conversion");
+        Require(rays.fx*(-.375)+rays.cx==-1&&rays.fx*.625+rays.cx==1,"Horizontal frustum edges must map to NDC -1/+1");
+        Require(rays.fy*(-.5)+rays.cy==-1&&rays.fy*1.5+rays.cy==1,"Vertical frustum edges must map to NDC -1/+1");
+        const auto angles=RayIntrinsics::FromFovAngles(std::atan(-.375),std::atan(.625),std::atan(-.5),std::atan(1.5),sign);
+        Require(angles.Same(rays),"Signed FOV radians must preserve asymmetric ray intrinsics");
+        // A frustum need not contain the optical axis; never recenter it.
+        const auto shifted=RayIntrinsics::FromFrustumTangents(.5,1.5,1,3,sign);
+        Require(shifted.cx==-2&&shifted.cy==-2,"Off-axis frustum was silently recentered");
+    }
+    for(const auto bounds:{std::array<double,4>{1,1,-1,1},{2,1,-1,1},{-1,1,2,1},
+                           {-1,1,1,1},{0,1e-300,-1,1},{-1e300,1e300,-1,1},
+                           {-1e39,1e39,-1,1},{-1,1,-1e39,1e39},
+                           {-std::numeric_limits<double>::max(),std::numeric_limits<double>::max(),-1,1}})
+        Reject([&]{RayIntrinsics::FromFrustumTangents(bounds[0],bounds[1],bounds[2],bounds[3],1);});
+    for(unsigned n=0;n<4;++n) for(double invalid:{std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()}) {
+        std::array<double,4> bounds{-1,1,-1,1};bounds[n]=invalid;
+        Reject([&]{RayIntrinsics::FromFrustumTangents(bounds[0],bounds[1],bounds[2],bounds[3],1);});
+    }
+    Reject([&]{RayIntrinsics::FromFrustumTangents(-1,1,-1,1,0);});
+    for(unsigned n=0;n<4;++n) for(double invalid:{-1.57079632679489661923,1.57079632679489661923,3.5,
+         std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()}) {
+        std::array<double,4> angles{-.5,.5,-.5,.5};angles[n]=invalid;
+        Reject([&]{RayIntrinsics::FromFovAngles(angles[0],angles[1],angles[2],angles[3],1);});
+    }
+    Reject([&]{RayIntrinsics::FromFovAngles(.5,-.5,-.5,.5,1);});
+    Reject([&]{RayIntrinsics::FromFovAngles(-.5,.5,.5,.5,1);});
     const RayIntrinsics source{2,4,.25f,-.125f,1};
     ParallelEyeProjections eyes{source,{RayIntrinsics{1,2,-.125f,.125f,1},RayIntrinsics{4,8,.25f,0,1}}};
     ProjectionCalibration explicitEyes{{2,4,-1,2,1},CalibrationProvenance::ExplicitUnassociated,eyes};

@@ -22,6 +22,15 @@ namespace {
 // focal scale, forward/reverse depth and both view-Z conventions.
 UINT fixtureProfile=0;
 struct FixtureProjection { double fx,a,b,sign; };
+// Signed X/forwardDistance and Y/forwardDistance limits, not angles or poses.
+struct FrustumBounds { double left,right,down,up; };
+constexpr FrustumBounds targetFrusta[2]={{-.375244140625,.624755859375,-.50048828125,1.49951171875},
+    {-1.50048828125,2.49951171875,-1.24951171875,.75048828125}};
+struct FovAngles { float left,right,down,up; };
+FovAngles FixtureFov(unsigned eye) {
+    const auto& f=targetFrusta[eye];
+    return {float(std::atan(f.left)),float(std::atan(f.right)),float(std::atan(f.down)),float(std::atan(f.up))};
+}
 FixtureProjection Model() {
     if(!fixtureProfile) return {0.572404087,-2.02655792e-6,1.00000203,1};
     const auto convention=(fixtureProfile-1)%4;
@@ -185,6 +194,19 @@ std::vector<UINT> Oracle(const live_pair::Header& h,UINT frame,UINT eye,UINT eye
             const double clipY=targetFy*viewY+targetCy*p.sign*viewZ;
             px=(clipX/z+1)*eyeWidth/2;py=(1-clipY/z)*eyeHeight/2;
         }
+        if(fixtureProfile>=10) {
+            // Independent interpolation between frustum edges. No production
+            // intrinsics, affine transforms or matrix builder in this oracle.
+            auto f=targetFrusta[eye];
+            if(fixtureProfile>=14) {
+                const auto angles=FixtureFov(eye);
+                f={std::tan(double(angles.left)),std::tan(double(angles.right)),std::tan(double(angles.down)),std::tan(double(angles.up))};
+            }
+            const double rayX=(2*(x+.5)/h.width-1-.125)/p.fx-(eye?.25:-.25)/z;
+            const double rayY=1-2*(y+.5)/h.height+.25;
+            px=(rayX-f.left)/(f.right-f.left)*eyeWidth;
+            py=(f.up-rayY)/(f.up-f.down)*eyeHeight;
+        }
         if(px<0||px>=eyeWidth||py<0||py>=eyeHeight) continue;
         UINT t=UINT(std::floor(py))*eyeWidth+UINT(std::floor(px)),id=y*h.width+x;
         if(z<nearest[t]||(z==nearest[t]&&id<winner[t])) { nearest[t]=z;winner[t]=id;out[t]=Rgba(x,y,frame,h.color_format); }
@@ -251,6 +273,17 @@ std::unique_ptr<LiveStereo> ConfiguredStereo(Gpu& gpu,const std::wstring& name,U
             if(fixtureProfile==9) left=right=m;
             calibration.eyeProjections=reprojection::ParallelEyeProjections{reprojection::RayIntrinsics::FromRowMatrix(m),
                 {reprojection::RayIntrinsics::FromRowMatrix(left),reprojection::RayIntrinsics::FromRowMatrix(right)}};
+        }
+        if(fixtureProfile>=10) {
+            const auto& l=targetFrusta[0];const auto& r=targetFrusta[1];
+            calibration.eyeProjections=reprojection::ParallelEyeProjections{
+                reprojection::RayIntrinsics::FromFrustumTangents(-1.125,.875,-.75,1.25,float(p.sign)),
+                {reprojection::RayIntrinsics::FromFrustumTangents(l.left,l.right,l.down,l.up,float(p.sign)),
+                 reprojection::RayIntrinsics::FromFrustumTangents(r.left,r.right,r.down,r.up,float(p.sign))}};
+        }
+        if(fixtureProfile>=14) for(unsigned eye=0;eye<2;++eye) {
+            const auto f=FixtureFov(eye);
+            calibration.eyeProjections->target[eye]=reprojection::RayIntrinsics::FromFovAngles(f.left,f.right,f.down,f.up,float(p.sign));
         }
         return std::make_unique<LiveStereo>(gpu.device.Get(),gpu.queue.Get(),name,0.5f,width,height,calibration);
     }
@@ -396,6 +429,8 @@ int wmain(int argc,wchar_t** argv) try {
     else if(argc==7&&(std::wstring(argv[1])==L"--worker"||std::wstring(argv[1])==L"--worker-timeout")) { fixtureProfile=UINT(std::stoul(argv[6]));Worker(argv[2],argv[3],std::wstring(argv[1])==L"--worker-timeout",UINT(std::stoul(argv[4])),UINT(std::stoul(argv[5]))); }
     else if(argc==2&&std::wstring(argv[1])==L"--projection-contract") { for(fixtureProfile=1;fixtureProfile<=4;++fixtureProfile) Producer(28); }
     else if(argc==2&&std::wstring(argv[1])==L"--eye-projections") { for(fixtureProfile=5;fixtureProfile<=9;++fixtureProfile) Producer(28); }
+    else if(argc==2&&std::wstring(argv[1])==L"--frustum-projections") { for(fixtureProfile=10;fixtureProfile<=13;++fixtureProfile) Producer(28); }
+    else if(argc==2&&std::wstring(argv[1])==L"--fov-projections") { for(fixtureProfile=14;fixtureProfile<=17;++fixtureProfile) Producer(28); }
     else if(argc==2&&std::wstring(argv[1])==L"--timeout") Producer(28,true);
     else if(argc==2&&std::wstring(argv[1])==L"--1080p") { Producer(24,false,1920,1080);Producer(28,false,1920,1080);Producer(87,false,1920,1080); }
     else if(argc==2&&std::wstring(argv[1])==L"--1440p") Producer(28,false,2560,1440);
