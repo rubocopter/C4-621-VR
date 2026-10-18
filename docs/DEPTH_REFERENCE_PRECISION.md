@@ -92,3 +92,42 @@ No AC6/SteamVR launch, injection or headset trial occurred for this increment.
 No new physical test is required for this offline-reference-only correction.
 The earlier PR #4 2560x1440/90-degree acceptance remains bounded to that build;
 there is no new claim about visual quality, performance or comfort.
+
+## Continuous consumer fixture oracle — follow-up
+
+The same distance-sorting assumption remained in
+`native/live_stereo/test_live_stereo.cpp::Oracle`. This oracle is separate from
+the two offline references corrected above. It now also orders original device
+depth by the sign of B, with source-index ties only for equal device depths.
+No production renderer or shader changes.
+
+Tests were introduced before correcting the oracle. A CPU-only literal-winner
+check fails on the old oracle; the new two-process GPU fixture also fails
+(frame4/eye0/pixel2723), because the existing GPU chooses the correct source
+while the oracle expects the farther one. Synthetic profiles18..21 cover both
+W signs and depth directions, swapped source order, true device-depth ties,
+invalid samples, skipped/repeated/expired frames, and reconnection. These
+profiles use identical source/target rays and the unchanged .5 baseline.
+
+The CPU check explicitly establishes that both reconstructed distances round
+to1 while the input depths remain .25/.75. Two source pixel centers map
+strictly inside one destination pixel for both eye offsets, so the literal
+expected owner does not depend on raster boundary rounding or another
+reconstruction implementation. The test runs in non-GPU CI as
+`live_stereo_depth_order_oracle`; the hardware comparison is
+`live_stereo_collapsed_depth`. This completes oracle consistency for live
+fixtures without claiming more precision in the distance diagnostics.
+
+```powershell
+cmake -S native/live_stereo -B out/live-oracle-depth-order-20261018/live_stereo -G "Visual Studio 17 2022" -A x64
+cmake --build out/live-oracle-depth-order-20261018/live_stereo --config Release --parallel 2
+ctest --test-dir out/live-oracle-depth-order-20261018/live_stereo -C Release --output-on-failure --no-tests=error
+```
+
+RED/GREEN logs: `out/live-oracle-depth-order-20261018/red.log` and `green.log`.
+All14 live CTests pass on RTX4070Ti without the D3D12 debug layer, including
+the four new hardware profiles and all previous profiles/resolutions/gates.
+Portable Python:40 pass and the optional offline GPU integration test explicitly
+skipped. Syntax/diff checks pass; independent review found no actionable issues.
+Fixtures are synthetic, not newly observed AC6 camera matrices. No additional
+game/headset test is needed for this fixture-only correction.

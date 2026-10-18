@@ -297,3 +297,20 @@ La primera persona ya está probada por el usuario y Depth of Field ya está des
 - No cambia el shader, protocolo, fences, gates de cola, baseline, resolución
   ni orientación. No se ejecutó AC6/SteamVR/OpenXR. La edad se comprueba en CPU
   antes de EndFrame; no garantiza la edad física del contenido en el visor.
+
+## 2026-10-18 — aceptación física PR #8 y oráculo de oclusiones live
+
+- Tras dos paradas seguras por múltiples colas en PID19588, el nuevo PID6844
+  completó el ensayo2560x1440/90° con una sola cola, tres procesos código0,
+  hooks restaurados y confirmación visual del usuario. Cambiaron overlay de
+  Steam, Discord y proceso: no se aísla la causa del fallo anterior. Condiciones,
+  contadores y límites registrados en `LIVE_STEREO_FINDINGS.md`.
+- Base `1dc8403`, rama `codex/live-oracle-depth-order-20261018`. El oráculo del
+  fixture live aún comparaba Z reconstruida, aunque las referencias offline
+  ya preservaban device depth. RED CPU literal y GPU (píxel2723/frame4/ojo0).
+- Se corrige solo ese oráculo, por signo de B y desempate de profundidad exacta.
+  Cuatro perfiles de dos procesos verifican el consumidor real con distancias
+  redondeadas iguales. Test CPU sin GPU añadido a CI; comandos y evidencia en
+  `docs/DEPTH_REFERENCE_PRECISION.md`. Producción, shaders y protocolos intactos.
+- GREEN:14 CTests live,40 Python correctos y un test GPU opcional omitido
+  explícitamente; sintaxis/diff correctos. Revisión independiente sin hallazgos.
