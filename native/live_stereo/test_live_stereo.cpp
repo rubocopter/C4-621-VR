@@ -36,6 +36,7 @@ FixtureProjection Model() {
     const auto convention=(fixtureProfile-1)%4;
     const double sign=convention>=2?-1:1;
     const bool reverse=convention%2==0;
+    if(fixtureProfile>=18) return {1,sign*(reverse?-1e20:1e20),reverse?1e20:-1e20,sign};
     return {1,sign*(reverse?-1:2),reverse?2.0:-2.0,sign};
 }
 void Require(bool b,const char* why) { if(!b) throw std::runtime_error(why); }
@@ -157,6 +158,10 @@ float Depth(UINT x,UINT y,UINT frame) {
         const float edge[]={std::numeric_limits<float>::infinity(),-0.1f,1.1f,-std::numeric_limits<float>::infinity(),-0.f,0.f,1.f};
         return edge[x];
     }
+    if(fixtureProfile>=18) {
+        if(frame==6) return .5f; // Original depths tie: smallest source wins.
+        return (x%2==unsigned(frame==5))?.25f:.75f;
+    }
     if(frame==6) return x%2?0.0067077986896038055f:0.006707798223942518f;
     if(frame==4&&((x/37+y/19)%5==0)) return std::numeric_limits<float>::quiet_NaN();
     if(frame==4) return x%2?0.75001f:0.25f;
@@ -175,8 +180,8 @@ UINT Rgba(UINT x,UINT y,UINT frame,UINT fmt) {
 }
 std::vector<UINT> Oracle(const live_pair::Header& h,UINT frame,UINT eye,UINT eyeWidth=1280,UINT eyeHeight=720) {
     std::vector<UINT> out(size_t(eyeWidth)*eyeHeight,0xff000000),winner(out.size(),UINT_MAX);
-    std::vector<double> nearest(out.size(),std::numeric_limits<double>::infinity());
     const auto p=Model();
+    std::vector<double> nearest(out.size(),p.b>0?-std::numeric_limits<double>::infinity():std::numeric_limits<double>::infinity());
     for(UINT y=0;y<h.height;++y) for(UINT x=0;x<h.width;++x) {
         float d=Depth(x,y,frame); if(!std::isfinite(d)||d<0||d>1) continue;
         double z=p.sign*p.b/(p.sign*double(d)-p.a);
@@ -194,7 +199,7 @@ std::vector<UINT> Oracle(const live_pair::Header& h,UINT frame,UINT eye,UINT eye
             const double clipY=targetFy*viewY+targetCy*p.sign*viewZ;
             px=(clipX/z+1)*eyeWidth/2;py=(1-clipY/z)*eyeHeight/2;
         }
-        if(fixtureProfile>=10) {
+        if(fixtureProfile>=10&&fixtureProfile<18) {
             // Independent interpolation between frustum edges. No production
             // intrinsics, affine transforms or matrix builder in this oracle.
             auto f=targetFrusta[eye];
@@ -209,9 +214,29 @@ std::vector<UINT> Oracle(const live_pair::Header& h,UINT frame,UINT eye,UINT eye
         }
         if(px<0||px>=eyeWidth||py<0||py>=eyeHeight) continue;
         UINT t=UINT(std::floor(py))*eyeWidth+UINT(std::floor(px)),id=y*h.width+x;
-        if(z<nearest[t]||(z==nearest[t]&&id<winner[t])) { nearest[t]=z;winner[t]=id;out[t]=Rgba(x,y,frame,h.color_format); }
+        // Preserve depth distinctions lost by reconstructed distance. Exact
+        // device-depth ties alone use the smaller source index, as on GPU.
+        const bool closer=p.b>0?d>nearest[t]:d<nearest[t];
+        if(closer||(d==nearest[t]&&id<winner[t])) { nearest[t]=d;winner[t]=id;out[t]=Rgba(x,y,frame,h.color_format); }
     }
     return out;
+}
+void VerifyDepthOrderOracle() {
+    live_pair::Header h;h.width=2;h.height=1;h.color_format=28;
+    for(fixtureProfile=18;fixtureProfile<=21;++fixtureProfile) {
+        const auto p=Model();
+        const double first=p.sign*p.b/(p.sign*.25-p.a),second=p.sign*p.b/(p.sign*.75-p.a);
+        Require(first==1&&second==1,"Fixture must collapse distinct depths to identical distances");
+        for(UINT frame:{3u,5u,6u}) for(UINT eye:{0u,1u}) {
+            // Two source centers map strictly inside one target pixel at
+            // +/- baseline/2. This expected owner never reconstructs view Z.
+            const UINT expected=frame==6?0u:UINT((p.b>0)==(frame==3));
+            Require(Oracle(h,frame,eye,1,1)[0]==Rgba(expected,0,frame,28),
+                    "Live CPU oracle loses original depth order when reconstructed distances tie");
+        }
+    }
+    fixtureProfile=0;
+    std::cout<<"PASS live depth oracle: both W signs/depth directions/source orders, exact-depth ties\n";
 }
 void VerifyPreview(LiveStereo& stereo,const live_pair::Header& h,UINT frame,const std::wstring& prefix,UINT eyeWidth=1280,UINT eyeHeight=720) {
     stereo.SavePreview(prefix);
@@ -266,7 +291,7 @@ std::unique_ptr<LiveStereo> ConfiguredStereo(Gpu& gpu,const std::wstring& name,U
         const auto p=Model();
         std::array<float,16> m{float(p.fx),0,0,0,0,1,0,0,0.125f,-0.25f,float(p.a),float(p.sign),0,0,float(p.b),0};
         reprojection::ProjectionCalibration calibration{reprojection::Perspective::FromRowMatrix(m),reprojection::CalibrationProvenance::ExplicitUnassociated};
-        if(fixtureProfile>4) {
+        if(fixtureProfile>4&&fixtureProfile<18) {
             m[8]=.125f*float(p.sign);m[9]=-.25f*float(p.sign);
             auto left=m,right=m;left[0]=1.25f;right[0]=.75f;left[5]=right[5]=.5f;
             left[8]=-.1875f*float(p.sign);right[8]=.0625f*float(p.sign);left[9]=right[9]=.0625f*float(p.sign);
@@ -274,14 +299,14 @@ std::unique_ptr<LiveStereo> ConfiguredStereo(Gpu& gpu,const std::wstring& name,U
             calibration.eyeProjections=reprojection::ParallelEyeProjections{reprojection::RayIntrinsics::FromRowMatrix(m),
                 {reprojection::RayIntrinsics::FromRowMatrix(left),reprojection::RayIntrinsics::FromRowMatrix(right)}};
         }
-        if(fixtureProfile>=10) {
+        if(fixtureProfile>=10&&fixtureProfile<18) {
             const auto& l=targetFrusta[0];const auto& r=targetFrusta[1];
             calibration.eyeProjections=reprojection::ParallelEyeProjections{
                 reprojection::RayIntrinsics::FromFrustumTangents(-1.125,.875,-.75,1.25,float(p.sign)),
                 {reprojection::RayIntrinsics::FromFrustumTangents(l.left,l.right,l.down,l.up,float(p.sign)),
                  reprojection::RayIntrinsics::FromFrustumTangents(r.left,r.right,r.down,r.up,float(p.sign))}};
         }
-        if(fixtureProfile>=14) for(unsigned eye=0;eye<2;++eye) {
+        if(fixtureProfile>=14&&fixtureProfile<18) for(unsigned eye=0;eye<2;++eye) {
             const auto f=FixtureFov(eye);
             calibration.eyeProjections->target[eye]=reprojection::RayIntrinsics::FromFovAngles(f.left,f.right,f.down,f.up,float(p.sign));
         }
@@ -430,7 +455,9 @@ void Producer(UINT fmt,bool timeout=false,UINT eyeWidth=1280,UINT eyeHeight=720)
 }
 }
 int wmain(int argc,wchar_t** argv) try {
-    if(argc==2&&std::wstring(argv[1])==L"--shader-isolation") VerifyShaderIsolation();
+    if(argc==2&&std::wstring(argv[1])==L"--depth-order-oracle") VerifyDepthOrderOracle();
+    else if(argc==2&&std::wstring(argv[1])==L"--collapsed-depth") { for(fixtureProfile=18;fixtureProfile<=21;++fixtureProfile) Producer(28); }
+    else if(argc==2&&std::wstring(argv[1])==L"--shader-isolation") VerifyShaderIsolation();
     else if(argc==2&&std::wstring(argv[1])==L"--nonfinite-projection") VerifyNonfiniteProjection();
     else if(argc==2&&std::wstring(argv[1])==L"--invalid-resolution") VerifyResolutionValidation();
     else if(argc==7&&(std::wstring(argv[1])==L"--worker"||std::wstring(argv[1])==L"--worker-timeout")) { fixtureProfile=UINT(std::stoul(argv[6]));Worker(argv[2],argv[3],std::wstring(argv[1])==L"--worker-timeout",UINT(std::stoul(argv[4])),UINT(std::stoul(argv[5]))); }
