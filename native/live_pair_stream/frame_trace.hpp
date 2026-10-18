@@ -22,6 +22,8 @@ class Trace {
 public:
     static constexpr unsigned PairCapacity=512,ListCapacity=8192;
     UINT64 submit=0,overflow=0;
+    UINT64 closed_submit=0,omitted_pairs=0;
+    bool window_closed=false;
     Id queue=0;
     Source depth;
     std::array<Source,3> color{};
@@ -32,10 +34,13 @@ public:
     UINT64 qpc=0;
     // Called under the producer enqueue mutex; recording threads never write here.
     void BeginSubmission(Id incoming,UINT64 now_qpc) {
+        ++submit;
+        if(window_closed) return;
         if(queue&&queue!=incoming) depth={};
-        queue=incoming;++submit;qpc=now_qpc;color={};
+        queue=incoming;qpc=now_qpc;color={};
     }
     void Observe(Id list,UINT index,const frame_pair::Ledger::Summary& s) {
+        if(window_closed) return;
         if(!s.trusted||s.aliasing) { depth={};color={}; }
         else {
             if(s.depth_touched) depth={queue,list,submit,s.recording,s.depth_transition,index,s.depth_known};
@@ -49,7 +54,16 @@ public:
         lists[list_count++]={queue,list,submit,qpc,index,s};
     }
     void RetireDepth() { depth={}; }
+    // The minimal no-consumer trial has captured its whole ring by the first
+    // drop. Retain that immutable prefix instead of filling the list store
+    // with an irrelevant tail. Captures after a later resume remain explicit
+    // omissions; neither the analyzer nor the stream may invent their metadata.
+    void CloseOnBackpressure() {
+        if(!window_closed) { window_closed=true;closed_submit=submit; }
+        RetireDepth();
+    }
     void Publish(UINT64 seq,unsigned slot,unsigned backbuffer,Id depth_id,Id color_id,UINT64 tick) {
+        if(window_closed) { ++omitted_pairs;return; }
         if(pair_count==PairCapacity) { ++overflow;return; }
         pairs[pair_count++]={seq,tick,submit,slot,backbuffer,depth_id,color_id,depth,color[backbuffer]};
     }
@@ -69,7 +83,7 @@ public:
     }
     void Write(FILE* log) const {
         LARGE_INTEGER frequency{};QueryPerformanceFrequency(&frequency);
-        std::fprintf(log,"{\"phase\":\"frame_trace_contract\",\"diagnostic_version\":1,\"qpc_frequency\":%llu,\"submissions\":%llu,\"overflow\":%llu,\"pair_records\":%u,\"list_records\":%u,\"frame_associated\":false,\"draw_binding_observed\":false,\"viewport_observed\":false}\n",frequency.QuadPart,submit,overflow,pair_count,list_count);
+        std::fprintf(log,"{\"phase\":\"frame_trace_contract\",\"diagnostic_version\":1,\"qpc_frequency\":%llu,\"submissions\":%llu,\"overflow\":%llu,\"pair_records\":%u,\"list_records\":%u,\"window_closed\":%s,\"closed_submit\":%llu,\"omitted_pairs\":%llu,\"frame_associated\":false,\"draw_binding_observed\":false,\"viewport_observed\":false}\n",frequency.QuadPart,submit,overflow,pair_count,list_count,window_closed?"true":"false",closed_submit,omitted_pairs);
         for(unsigned i=0;i<list_count;++i) {
             const auto& e=lists[i];const auto& s=e.summary;
             std::fprintf(log,"{\"phase\":\"frame_trace_list\",\"queue\":\"0x%llx\",\"submit\":%llu,\"qpc\":%llu,\"list\":\"0x%llx\",\"list_index\":%u,\"recording\":%llu,\"trusted\":%s,\"aliasing\":%s,\"depth_touched\":%s,\"depth_known\":%s,\"depth_state\":%u,\"depth_transition\":%llu,\"color_touched\":%u,\"color_present\":%u,\"color_transitions\":[%llu,%llu,%llu]}\n",static_cast<UINT64>(e.queue),e.submit,e.qpc,static_cast<UINT64>(e.list),e.index,s.recording,s.trusted?"true":"false",s.aliasing?"true":"false",s.depth_touched?"true":"false",s.depth_known?"true":"false",s.depth_state,s.depth_transition,s.color_touched,s.color_present,s.color_transition[0],s.color_transition[1],s.color_transition[2]);

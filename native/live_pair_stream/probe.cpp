@@ -26,7 +26,8 @@ static auto* capture=new StreamCapture; // retained, including on failure/in-fli
 #ifdef AC6_FRAME_TRACE
 static void VerifyTraceFixture() {
     const auto& t=capture->trace;
-    if(t.pair_count!=4||t.overflow) throw std::runtime_error("GPU fixture trace is incomplete");
+    if(t.pair_count!=3||t.overflow||!t.window_closed||t.omitted_pairs!=1)
+        throw std::runtime_error("GPU fixture must retain three pairs and report the resumed capture as omitted");
     const auto& a=t.pairs[0];const auto& repeated=t.pairs[1];const auto& changed=t.pairs[2];
     for(unsigned i=0;i<t.pair_count;++i) {
         const auto& p=t.pairs[i];
@@ -72,6 +73,12 @@ static void GateFixture(PairFixture& fixture) {
     if(capture->frames!=3||capture->fence->GetCompletedValue()!=0) throw std::runtime_error("Producer gate did not keep readiness pending");
     Check(capture->released->Signal(3),"Advance release before producer completion");submit(true,false);
     if(capture->frames!=3) throw std::runtime_error("Slot reused before BOTH fences completed");
+#ifdef AC6_FRAME_TRACE
+    // Real v17 saturated its diagnostic list store AFTER the three captured
+    // pairs. Reproduce the no-consumer tail without running a game.
+    for(unsigned i=0;i<frame_trace::Trace::ListCapacity+1;++i) submit(true,false);
+    if(capture->trace.overflow) throw std::runtime_error("Post-backpressure tail overflowed the captured trace window");
+#endif
     Check(gate->Signal(1),"Open producer gate");
     const auto until=GetTickCount64()+5000;while(capture->fence->GetCompletedValue()<3&&GetTickCount64()<until) Sleep(1);
     if(capture->fence->GetCompletedValue()<3||capture->fence->GetCompletedValue()==UINT64_MAX) TerminateProcess(GetCurrentProcess(),3);

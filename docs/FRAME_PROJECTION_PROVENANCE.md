@@ -1,7 +1,8 @@
 # Proyección y procedencia de captura — 18-10-2026
 
-Incremento host desde `34dde0b`. No se ha iniciado AC6, SteamVR ni OpenXR.
-No acredita proyección por frame ni una aceptación nueva en PSVR2.
+Incremento desde `34dde0b`. La primera tanda fue exclusivamente host; la
+observación posterior del 18-10 se registra debajo. No acredita proyección
+por frame ni una aceptación nueva en PSVR2. No se ha iniciado SteamVR/OpenXR.
 
 ## Punto de asociación localizado
 
@@ -51,6 +52,11 @@ Fuentes primarias: [root signatures](https://learn.microsoft.com/en-us/windows/w
   **no** se declaran libres de acceso a esos recursos. Overflow se informa.
   No hay creación de recursos, lectura de píxeles, espera GPU o I/O nueva
   dentro de los callbacks.
+- Corrección posterior a v17: el registro se cierra al primer descarte por
+  backpressure, reteniendo el prefijo completo hasta ese envío. El productor
+  sigue su ruta normal; un par publicado tras reanudar se cuenta en
+  `omitted_pairs` y el analizador rechaza cobertura completa. No se reinicia
+  ni se reconstruye una identidad desde el slot reciclado.
 - Volcado tras Stop y retirada de hooks; entradas del helper publicadas con
   release/acquire, payload inmutable, slots incompletos omitidos y snapshot
   incompleto señalado sin esperar. Trampoline, memoria y DLL quedan residentes.
@@ -60,6 +66,9 @@ ni una extensión del mapping. El protocolo compartido v1 sigue en 120 bytes.
 Solo se registra un par tras Signal y publicación de su sequence; esto no
 certifica que ready haya completado en ese instante CPU. La reutilización
 sigue dependiendo de ambas fences. El consumidor no lee esta traza.
+Los campos aditivos `window_closed`, `closed_submit` y `omitted_pairs`
+documentan el cierre de esa ventana. Un log v1 antiguo conserva su rechazo
+por overflow; no se le aplica retroactivamente una cobertura que no declaró.
 
 `tools/analyze_frame_trace.py` contrasta cada fuente con una entrada exacta
 de envío/lista/índice/grabación/transición y rechaza historias incompletas,
@@ -117,9 +126,50 @@ ON, cuatro del par de captura, 14 del consumidor GPU y cinco XR host, todos
 correctos. La CI compila también el productor ON; los fixtures GPU se han
 ejecutado localmente, no se convierten en ensayos de visor. La sonda del helper
 se prueba por entradas CPU y publicación concurrente; su detour real en AC6
-queda pendiente de la ventana presencial descrita abajo.
+se ejercitó después en v17, como se registra a continuación.
 
-## Única observación mínima al volver (requiere presencia)
+## Observación presencial v17 — PID 11284
+
+Confirmación del usuario: «todo abierto», en respuesta a la petición de misión
+cooperativa offline y presencia para la sonda. Loader verificó ejecutable/hash,
+`ac6_coop.dll`, ausencia de módulos EAC y nombre de DLL no mapeado. Sin visor,
+consumidor ni seguimiento. La sonda finalizó por su plazo de 8 s, código 0;
+ocho hooks restaurados, DLL retenida inactiva y juego respondiendo.
+
+| Evidencia | Resultado |
+| --- | --- |
+| Captura | 3 pares, 689 descartes por backpressure, una cola, sin fallo ni ledger inseguro |
+| Fuentes observadas | copy_submit 54/82/110; en estos tres casos, depth y color pertenecen a listas distintas del mismo envío |
+| Helper | 256 muestras, 70 direcciones de vista, 10 modelos fx/fy/A/B/W; 0 inválidas, 0 slots incompletos |
+| Ventana del helper | 9,4601 ms de QPC; todas las muestras terminan antes del primer envío capturado |
+| Capacidad de listas | 8192 entradas; última retenida en envío 4152, 30941 omisiones posteriores por overflow |
+| Análisis original | `capture_provenance_complete:false`, `unknown_or_truncated_trace`; `frame_associated:false` |
+
+No son 70 cámaras identificadas ni 256 frames del stream. Varias muestras
+comparten fx/fy y difieren en A/B: filtrar por FOV tampoco identifica el pase
+correcto. Las pilas dan callsites concretos para investigar el uso de la salida
+del helper, pero no observan un binding GPU. El resultado no permite seleccionar
+matriz/jitter para ninguno de los tres pares.
+
+Evidencia privada: `evidence/frame-trace-v17-11284-loader.json`,
+`evidence/frame-trace-v17-11284-analysis.json`,
+`evidence/frame-trace-v17-11284-observation.json` y JSONL nativo
+`out/frame-projection-20261018/diagnostic/Release/live_pair_probe_v17_11284.jsonl`.
+SHA-256 DLL: `25bd56e28181ed920f55e2f710f609ce8ff6cde8d6eb282822e2afb6399c6a6c`.
+SHA-256 JSONL: `5c50b9e47b8d5574051382cc7ac5fc699d3a69169a4d150101e2131c84b82b35`.
+No se publican capturas, direcciones heap ni los datos raw del proceso.
+
+El overflow se reprodujo en host manteniendo el anillo lleno y generando más
+de 8192 envíos tras el primer descarte: RED con
+`Post-backpressure tail overflowed the captured trace window`. El cierre de
+ventana lo corrige sin aumentar capacidad ni relajar el analizador. Los tests
+incluyen reanudación: conserva tres pares y declara el cuarto omitido. Logs
+RED/GREEN en `out/frame-projection-window-20261018/`. El build nuevo v18 usa otro
+directorio; v17 permanece intacto. Cinco CTests ON correctos y 53 tests Python
+(52 correctos, una integración GPU opcional omitida). Esta corrección todavía
+no se ha ejecutado dentro del juego.
+
+## Próxima observación mínima (requiere presencia)
 
 No necesita visor ni consumidor. Una ventana de **8 s**, sin seguimiento,
 en misión cooperativa offline ya confirmada, ejecutable/hash esperado y PID
@@ -127,21 +177,22 @@ nuevo; ninguna sonda anterior activa ni nombre de DLL mapeado. Mantener la
 vista de misión activa y girar suavemente con el mando desde el inicio.
 No ejecutar esta sección sin la presencia/confirmación del usuario.
 
-Build aislado preparado en `out/frame-projection-20261018/diagnostic`, DLL
-`ac6_live_pair_probe_v17.dll`. El loader vuelve a comprobar identidad, módulos,
+Build aislado preparado en `out/frame-projection-window-20261018/diagnostic`, DLL
+`ac6_live_pair_probe_v18.dll`. El loader vuelve a comprobar identidad, módulos,
 ausencia de EAC y nombre no mapeado; si coincide con una DLL ya cargada,
 usar **otra build/directorio/nombre**, nunca sobrescribirla o descargarla.
 Ejemplo para esa sesión futura, sustituyendo PID y nombres de evidencia nuevos:
 
 ```powershell
-.venv-analysis/Scripts/python.exe -B tools/load_camera_probe.py --pid <PID-NUEVO> --single-player-confirmed --dll out/frame-projection-20261018/diagnostic/Release/ac6_live_pair_probe_v17.dll --no-screenshots --capture evidence/frame-trace-new-unused.png --output evidence/frame-trace-new-loader.json
-.venv-analysis/Scripts/python.exe -B tools/analyze_frame_trace.py --log out/frame-projection-20261018/diagnostic/Release/live_pair_probe_v17_<PID-NUEVO>.jsonl --output evidence/frame-trace-new-analysis.json
+.venv-analysis/Scripts/python.exe -B tools/load_camera_probe.py --pid <PID-NUEVO> --single-player-confirmed --dll out/frame-projection-window-20261018/diagnostic/Release/ac6_live_pair_probe_v18.dll --no-screenshots --capture evidence/frame-trace-new-unused.png --output evidence/frame-trace-new-loader.json
+.venv-analysis/Scripts/python.exe -B tools/analyze_frame_trace.py --log out/frame-projection-window-20261018/diagnostic/Release/live_pair_probe_v18_<PID-NUEVO>.jsonl --output evidence/frame-trace-new-analysis.json
 ```
 
 Éxito diagnóstico: tres pares publicados (anillo sin consumidor, descartes
 posteriores esperados), una cola, fuentes de transición resueltas, muestras
 del helper >0 con QPC/pilas, ningún overflow de la traza, snapshot completo,
-ocho hooks restaurados y juego respondiendo. Guardar JSON del loader con hash
+ventana cerrada y cero pares omitidos, ocho hooks restaurados y juego
+respondiendo. Guardar JSON del loader con hash
 de DLL, JSONL nativo completo y análisis. F12 cancela; cualquier fallo conserva
 los registros y detiene el ensayo. No es una prueba de fusión/comfort.
 
@@ -167,4 +218,4 @@ ctest --test-dir out/frame-projection-new -C Release --output-on-failure --no-te
 Estos comandos solo compilan/ejecutan fixtures propios. El default OFF conserva
 el productor de 60 s y siete hooks; el diagnóstico es de 8 s con ocho hooks.
 Ninguna opción de presentación, baseline, preset, límite de giro, frescura o
-fence cambia. La prueba en juego descrita arriba sigue sin ejecutar.
+fence cambia. La repetición con v18 descrita arriba sigue sin ejecutar.

@@ -45,6 +45,18 @@ int main() try {
     for(unsigned i=0;i<Trace::PairCapacity+2;++i) trace.Publish(i+3,0,0,1,2,1010+i);
     Require(trace.overflow>0,"Bounded trace overflow must be explicit");
     Require(!trace.Find(Trace::PairCapacity+4,0,1020,live_pair::Ready,Trace::PairCapacity+4),"Truncated trace must not synthesize a match");
+    static Trace closed;
+    ledger.Reset(20);ledger.Record(20,Barrier(1,192));ledger.Record(20,Barrier(2,0));ledger.Seal(20);
+    closed.BeginSubmission(100,2000);closed.Observe(20,0,ledger.Snapshot(20));closed.Publish(1,0,0,1,2,2001);
+    closed.BeginSubmission(100,2002);closed.Observe(20,0,ledger.Snapshot(20));closed.CloseOnBackpressure();
+    const auto retained=closed.list_count;
+    for(unsigned i=0;i<Trace::ListCapacity+10;++i) { closed.BeginSubmission(100,2003+i);closed.Observe(20,0,ledger.Snapshot(20)); }
+    closed.CloseOnBackpressure();
+    Require(closed.window_closed&&closed.closed_submit==2&&closed.list_count==retained&&!closed.overflow,
+            "First backpressure must freeze the captured prefix without tail overflow or reopening");
+    closed.Publish(2,1,0,1,2,3000);
+    Require(closed.pair_count==1&&closed.omitted_pairs==1&&!closed.Find(2,1,3000,live_pair::Ready,2),
+            "A resumed stream must report the omitted diagnostic pair and never synthesize metadata");
     std::cout<<"Submission/recording provenance and diagnostic publication rejection passed\n";
     return 0;
 } catch(const std::exception& e) { std::cerr<<e.what()<<'\n';return 1; }

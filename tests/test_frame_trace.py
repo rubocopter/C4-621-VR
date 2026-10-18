@@ -99,6 +99,16 @@ class FrameTraceTests(unittest.TestCase):
         events[7]['frames'] = 2
         self.assertFalse(analyze(events)['capture_provenance_complete'])
 
+    def test_closed_capture_window_requires_explicit_complete_coverage(self):
+        events = fixture()
+        events[0].update(window_closed=True, closed_submit=3, omitted_pairs=0)
+        self.assertTrue(analyze(events)['capture_provenance_complete'])
+        for change in (dict(omitted_pairs=1), dict(closed_submit=1)):
+            altered = copy.deepcopy(events);altered[0].update(change)
+            self.assertFalse(analyze(altered)['capture_provenance_complete'])
+        altered = copy.deepcopy(events);del altered[0]['omitted_pairs']
+        self.assertFalse(analyze(altered)['capture_provenance_complete'])
+
 
 if __name__ == '__main__':
     unittest.main()

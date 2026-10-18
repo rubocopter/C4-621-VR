@@ -140,7 +140,7 @@ struct StreamCapture : frame_pair::Capture {
             for(unsigned s=0;s<3;++s) if(Reusable(Read64(shared->slots[s].sequence),ready,done)) { selected=s;break; }
             if(selected<0) {
 #ifdef AC6_FRAME_TRACE
-                trace.RetireDepth();
+                trace.CloseOnBackpressure();
 #endif
                 ++dropped;depth_since_capture=false;forwarded=true;original(queue,n,lists);return;
             }

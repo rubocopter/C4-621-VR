@@ -49,6 +49,14 @@ def analyze(events):
         errors.append('unknown_or_truncated_trace')
     if contract.get('pair_records') != len(pairs) or contract.get('list_records') != len(lists):
         errors.append('incomplete_records')
+    # Additive diagnostic fields. Older v1 logs have no closed-window marker;
+    # their existing overflow rejection remains unchanged.
+    if contract.get('window_closed'):
+        closed = contract.get('closed_submit')
+        if (type(closed) is not int or closed <= 0 or contract.get('omitted_pairs') != 0
+                or any(type(p.get('copy_submit')) is not int or p['copy_submit'] >= closed for p in pairs)
+                or any(type(e.get('submit')) is not int or e['submit'] > closed for e in lists)):
+            errors.append('incomplete_closed_capture_window')
     if (not projection.get('snapshot_complete') or projection.get('samples') != len(samples)):
         errors.append('incomplete_projection_observation')
     if any(summary.get(f) is not False for f in ('failed', 'multiple_queues', 'ledger_unsafe')):
@@ -131,6 +139,8 @@ def analyze(events):
                 invalid_projection_candidates=invalid,
                 projection_admitted_overflow=projection.get('overflow', 0),
                 projection_window_full=projection.get('sample_limit_reached', False),
+                capture_window_closed=contract.get('window_closed', False),
+                capture_pairs_omitted=contract.get('omitted_pairs', 0),
                 frame_associated=False, projection_association='missing_raster_binding',
                 missing=['GPU constant-buffer/root binding and bytes at the depth-writing draw',
                          'actual raster viewport/scissor and jitter convention',
