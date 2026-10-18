@@ -339,3 +339,20 @@ La primera persona ya está probada por el usuario y Depth of Field ya está des
   revisión independiente correctos. El mock no ejecuta binarios ni carga sondas.
 - Sin cambios de captura, shader, reproyección, presentación o protocolo; no
   se inicia juego/SteamVR ni se cargan sondas para esta mejora de herramientas.
+
+## 2026-10-18 — estado documental basado en aceptación física
+
+- Se centraliza el estado en `docs/STATUS.md`: última aceptación física de
+  `1dc8403`/PR #8 ante borde cercano/fondo lejano, perfil2560×1440/90°;
+  se distingue de contratos opcionales y caducidad forzada solo host.
+- `docs/VR_TRIAL_RUNBOOK.md` reúne la repetición con builds aisladas, sondas
+  nuevas y `--consumer-exe`. Se retiran las invocaciones obsoletas de las
+  páginas actuales de orientación/presentación y se corrigen futuros ya
+  superados. README/índice/roadmap enlazan estado, límites y pendientes.
+- Se conserva la evidencia y cronología; no se atribuye la segunda cola a
+  Steam/Discord ni se declara geometría métrica, rendimiento o confort.
+- Cambio exclusivamente documental: sin código, recompilaciones, cargas de
+  sondas, inicio de juego/SteamVR ni nueva prueba física. Validación de cifras
+  contra aceptación privada, 153 enlaces locales/anclas correctos y sintaxis
+  del ejemplo PowerShell sin ejecutarlo (0 errores). Revisión independiente
+  sin hallazgos y diff correcto.

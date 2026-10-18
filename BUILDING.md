@@ -2,6 +2,11 @@
 
 This is source code for a **bounded, experimental Windows x64 diagnostic**, not an installable VR mod. It does **not** include Armored Core VI, third-party tools, binary captures, compatible game files or a public release.
 
+Current evidence and remaining gates: [verified status](docs/STATUS.md). For an
+authorized physical trial, use the [current stereo procedure](docs/VR_TRIAL_RUNBOOK.md),
+which creates fresh isolated builds and names. The fixed build paths below are
+for development only: never run them against a DLL that may be mapped.
+
 ## Requirements
 
 - Windows x64, Visual Studio **2022** with MSVC/C++ and Windows SDK, CMake 3.24+ (some native targets require 3.24), Git, PowerShell.
@@ -53,7 +58,7 @@ SteamVR or OpenXR. See [projection evidence](PROJECTION_FINDINGS.md#contrato-de-
 
 ## Testing inside the headset
 
-Read [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) and [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md) first. The verified 18 October 2026 reference trial explicitly used `--eye-width 2560 --eye-height 1440 --rotation-limit-deg 90 --headtracking`. The program defaults remain 1280×720 and 25°.
+Read the [verified status](docs/STATUS.md) and follow the [current isolated stereo procedure](docs/VR_TRIAL_RUNBOOK.md). Historical conditions and measurements remain in [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) and [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md). The verified 18 October 2026 reference trial explicitly used `--eye-width 2560 --eye-height 1440 --rotation-limit-deg 90 --headtracking`. The program defaults remain 1280×720 and 25°.
 
 The loader checks a specific executable path/hash and requires a cooperatively launched, separately confirmed single-player/offline session; it is **not** a general-purpose injector. Do not run experiments in official matchmaking or with anti-cheat active. Use a new PID, never reuse mapped DLL names, and never force-unload a mapped diagnostic DLL. Stop with F12 and verify hook restoration. Avoid publishing private game assets or diagnostic captures.
 

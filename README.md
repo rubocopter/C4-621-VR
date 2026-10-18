@@ -44,10 +44,11 @@ The goal is a convincing, responsive cockpit-scale experience. Today it is a wor
 | **Live in-headset stereo** | The running game's view updates with controller movement, with visible depth and no double image reported in the bounded V7 trial. |
 | **Head-controlled view** | OpenXR head orientation and the game's camera were exercised together with the live stereo stream in V8 and subsequent trials. **Rotational tracking only (3DoF).** |
 | **Higher-quality output** | The V11 experiment used **2560 × 1440 output pixels per eye** and a **90° head-rotation limit**. The operator reported a clearer image with no noticeable stutter during that short trial. |
+| **Latest physical regression** | PR #8: at **2560×1440/90°**, the operator confirmed a live, fusible near-edge/distant-background scene without doubled image or observed freezes, with correct head turning during the bounded trial. |
 | **Controlled GPU transport** | A D3D12 color/depth stream travels through shared GPU resources and fences to an independent stereo consumer, without CPU pixel readback in the normal path. |
 | **Safe experimental shutdown** | Bounded trial runs, frame-expiry handling, explicit stop signals, and hook restoration are implemented and tested. |
 
-<sub>Reference: 18 October 2026. The recorded 1440p/90° setup is an <strong>explicit test configuration</strong>, not the program default (1280×720 and 25°). The subjective headset result is not a measured guarantee of smooth frame pacing or motion-to-photon latency. See <a href="QUALITY_PACING_FINDINGS.md">quality and pacing evidence</a> and <a href="LIVE_STEREO_FINDINGS.md">live stereo findings</a>.</sub>
+<sub>Reference: 18 October 2026. The recorded 1440p/90° setup is an <strong>explicit test configuration</strong>, not the program default (1280×720 and 25°). The subjective headset result is not a measured guarantee of smooth frame pacing or motion-to-photon latency. See <a href="docs/STATUS.md">verified status and remaining work</a>, <a href="QUALITY_PACING_FINDINGS.md">quality and pacing evidence</a> and <a href="LIVE_STEREO_FINDINGS.md">live stereo findings</a>.</sub>
 
 ## Under the hood
 
@@ -102,6 +103,8 @@ Want to inspect the actual engineering rather than just the project overview?
 
 | Start here | What you'll find |
 | --- | --- |
+| **[Verified status](docs/STATUS.md)** | Physical acceptance, host-only results, unresolved assumptions and the next engineering gate |
+| [Current bounded trial procedure](docs/VR_TRIAL_RUNBOOK.md) | Isolated builds and explicit 1440p/90° consumer selection; no automatic game launch |
 | **[Technical documentation hub](docs/INDEX.md)** | Architecture, investigation timeline, all primary reports, and a reading path by topic |
 | [Live stereo implementation](LIVE_STEREO_FINDINGS.md) | D3D12 producer/consumer, frame ring, GPU reprojection, headset tests and recovery |
 | [Quality and frame pacing](QUALITY_PACING_FINDINGS.md) | Output profiles, 1440p/90° experiment, timings and limitations |
@@ -116,7 +119,7 @@ Want to inspect the actual engineering rather than just the project overview?
 - Native components: [`native/`](native/) — D3D12 producer, depth reprojection, OpenXR display and camera experiments.
 - Research and analysis tools: [`tools/`](tools/).
 - Regression tests: [`tests/`](tests/) and [Windows GitHub Actions](.github/workflows/ci.yml).
-- Historical chronology: [`MODLOG.md`](MODLOG.md); some older notes describe pending steps that have since been completed. Start with the current live-stereo and quality reports instead.
+- Historical chronology: [`MODLOG.md`](MODLOG.md); some older notes describe pending steps that have since been completed. Start with the [verified status](docs/STATUS.md) instead.
 - The source can be built for research using [`BUILDING.md`](BUILDING.md). Live experiments require a specifically fingerprinted game build and an explicitly confirmed offline/single-player environment without active anti-cheat. **Do not test in official online matchmaking.**
 
 </details>

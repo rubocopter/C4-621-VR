@@ -4,19 +4,20 @@
 
 This is the documentation entry point for **C4-621 VR**, an experimental Armored Core VI D3D12/OpenXR PCVR research project. It separates observed headset behavior, host-tested implementation details, and open engineering questions.
 
-> **Current reference (18 October 2026):** The source has produced **continuous depth-reprojected stereo** and combined it with **head-orientation tracking** in bounded PS VR2 experiments. A 2560×1440-per-eye / 90° trial was subjectively clearer. No public player release or complete 6DoF VR experience exists. Earlier documents sometimes retain historical “pending” gates; treat the later findings as authoritative for current progress.
+> **Current reference (18 October 2026):** The latest bounded PSVR2 regression (PR #8, now in `main`) was accepted at **2560×1440 per eye / 90°**: live fusible depth, no doubled image or observed freezes, and correct head turning between a near edge and distant background. This does not establish metric geometry, latency or prolonged comfort. Start with [verified status](STATUS.md); earlier reports retain historical results.
 
 ## Choose a reading path
 
 | Your question | Read these first |
 | --- | --- |
-| *What has actually been seen in the headset?* | [Live stereo trials](../LIVE_STEREO_FINDINGS.md) → [quality and pacing measurements](../QUALITY_PACING_FINDINGS.md) |
+| *What has actually been seen in the headset?* | [Verified status](STATUS.md) → [Live stereo trials](../LIVE_STEREO_FINDINGS.md) → [quality and pacing measurements](../QUALITY_PACING_FINDINGS.md) |
+| *How do I repeat the accepted bounded trial?* | [Current stereo procedure](VR_TRIAL_RUNBOOK.md), with isolated binaries and explicit consumer selection |
 | *How does the D3D12 capture work?* | [Render capture](../RENDER_CAPTURE_FINDINGS.md) → [color/depth pairing](../FRAME_PAIR_FINDINGS.md) → [continuous GPU stream](../LIVE_STEREO_FINDINGS.md) |
 | *What if the pair expires during the last eye copy?* | [Final source check before frame submission](../LIVE_STEREO_FINDINGS.md#frescura-al-enviar-el-par--corrección-host-del-18-10-2026) |
 | *Where does stereo disparity come from?* | [Projection and offline stereo](../PROJECTION_FINDINGS.md) → [continuous stereo](../LIVE_STEREO_FINDINGS.md) |
 | *Can the consumer use different image intrinsics per eye?* | [Optional parallel-eye intrinsics: host contract and tests](EYE_PROJECTION_CONTRACT.md) |
 | *How do CPU and GPU choose the nearest depth sample?* | [Depth ownership, numerical limits and regression fixtures](DEPTH_REFERENCE_PRECISION.md) |
-| *How is head movement connected to the game?* | [Camera discovery](../CAMERA_FINDINGS.md) → [historical tracking runbook](../HEADTRACKING_RUNBOOK.md) → [VR display results](../VR_DISPLAY_FINDINGS.md) |
+| *How is head movement connected to the game?* | [Camera discovery](../CAMERA_FINDINGS.md) → [current combined stereo procedure](VR_TRIAL_RUNBOOK.md); [initial display history](../VR_DISPLAY_FINDINGS.md) |
 | *Can I build and test it?* | [Reproducible Windows build](../BUILDING.md) → [CI workflow](../.github/workflows/ci.yml) → [native test sources](../native/) |
 | *What should be implemented next?* | [Roadmap and validation gates](../MODDING_PLAN.md) → [quality/pacing limits](../QUALITY_PACING_FINDINGS.md) |
 | *Where did an assumption or failure originate?* | [Research chronology](../MODLOG.md) and individual findings documents |
@@ -41,6 +42,7 @@ This is the documentation entry point for **C4-621 VR**, an experimental Armored
 - **V7:** live depth-reprojected stereo changed as the game camera moved with a standard controller; the operator confirmed visible depth and no doubled image.
 - **V8:** live stereo and calibrated head orientation ran together in an OpenXR session. This is **3DoF orientation**, not room-scale 6DoF.
 - **V11:** explicit **2560×1440 output per eye, 90° rotation limit**; short-run operator feedback reported improved clarity without noticeable stutter.
+- **PR #4 and PR #8:** subsequent bounded regressions accepted at that profile; PR #8 specifically compared a near edge with distant background. Forced last-eye expiry remains host-tested, not physically induced.
 
 See the exact conditions and diagnostic counters in [LIVE_STEREO_FINDINGS.md](../LIVE_STEREO_FINDINGS.md) and [QUALITY_PACING_FINDINGS.md](../QUALITY_PACING_FINDINGS.md). The application's default output remains **1280×720 / 25°**.
 
@@ -56,11 +58,10 @@ See the exact conditions and diagnostic counters in [LIVE_STEREO_FINDINGS.md](..
 
 ## Historical research archive
 
-These reports are retained as a technical audit trail. A claim marked “pending” at the time of an older trial should not be read as a current regression.
+These reports are retained as a technical audit trail. A claim marked “pending” at the time of an older trial should not be read as a current regression. Use the [current roadmap](../MODDING_PLAN.md) for outstanding gates; use the [current procedure](VR_TRIAL_RUNBOOK.md) instead of archived launch commands.
 
 | Document | Historical emphasis |
 | --- | --- |
-| [Initial modding plan](../MODDING_PLAN.md) | Objectives, initial setup, specific game-build assumptions and validation gates |
 | [Camera findings](../CAMERA_FINDINGS.md) | Camera signatures, stable hook location, rotation/calibration |
 | [Render capture](../RENDER_CAPTURE_FINDINGS.md) | Identifying D3D12 render resources and safe readback/copy boundaries |
 | [Color/depth pair](../FRAME_PAIR_FINDINGS.md) | Source-frame identity and synchronization |

@@ -1,6 +1,8 @@
 # D3D12: captura de profundidad y transporte por GPU
 
-Estado del 15-10-2026. Esta etapa repara el trabajo interrumpido y conserva las pruebas anteriores. Imagen y orientación siguen siendo monoscópicas: el mapa de profundidad todavía no se usa para generar vistas estereoscópicas.
+**Informe histórico.** Estado vigente y procedimiento: [STATUS](docs/STATUS.md) y [prueba de estéreo continuo](docs/VR_TRIAL_RUNBOOK.md).
+
+Estado del 15-10-2026. Esta etapa repara el trabajo interrumpido y conserva las pruebas anteriores. En esa etapa la imagen era monoscópica: el mapa de profundidad aún no se usaba para generar vistas estereoscópicas. La ruta posterior de estéreo continuo sí fue aceptada en PSVR2.
 
 **Avance posterior:** ya existe una captura conjunta de color/profundidad en una sola lista privada de GPU. Véase [FRAME_PAIR_FINDINGS.md](FRAME_PAIR_FINDINGS.md). La muestra independiente y sus límites descritos abajo corresponden al primer ensayo de profundidad.
 
@@ -68,10 +70,9 @@ Ensayo final `evidence/gpu-vr-ready-17628-result.json`:
 - Sonda: 1779 aplicaciones durante 15 s, 0 excepciones, retirada automática y prólogo restaurado.
 - El usuario confirmó: «Sí, ahora funciona correctamente».
 
-Repetición conjunta en una sesión nueva del juego y con evidencias nuevas:
+La repetición de imagen monoscópica usó la herramienta histórica
+`run_vr_trial.py --gpu-capture`. Para una prueba actual seguir el
+[procedimiento de estéreo continuo](docs/VR_TRIAL_RUNBOOK.md), sin reutilizar
+sus comandos ni DLLs de aquella sesión.
 
-```powershell
-python -B tools\run_vr_trial.py --pid <PID> --single-player-confirmed --gpu-capture --tag vr-gpu-new
-```
-
-Persisten el límite de 25° y la retirada automática. La sonda ya cargada no debe forzarse a descargar ni recargarse en ese proceso. El siguiente trabajo es obtener color y profundidad sincronizados, validar proyección/escala y producir vistas independientes por ojo.
+En ese ensayo persistían el límite de 25° y la retirada automática. La sonda ya cargada no debe forzarse a descargar ni recargarse en ese proceso. El trabajo previsto entonces era obtener el par color/depth y vistas reproyectadas por ojo; se consiguió después. La proyección por frame y escala siguen pendientes, como recoge [STATUS](docs/STATUS.md).

@@ -2,13 +2,18 @@
 
 **Perfil de referencia confirmado por el usuario: 2560×1440 por ojo y límite de giro de 90°.** Ensayo acotado de 27 s, con 15 s de seguimiento: «Se veía más claro y sin tirones apreciables». Los valores por defecto del programa se conservan en 720p/25°; seleccionar expresamente el perfil de referencia al repetir. No hay validación de comodidad prolongada ni de latencia de movimiento a fotón.
 
+La regresión física posterior de PR #8 aceptó el mismo perfil ante borde
+cercano/fondo lejano; no fue una nueva comparación de calidad/rendimiento.
+[Estado y pendientes](docs/STATUS.md) · [procedimiento vigente](docs/VR_TRIAL_RUNBOOK.md).
+Las medidas siguientes conservan las condiciones de cada pasada histórica.
+
 ## Motivo y cambios acotados
 
 En el ensayo conjunto V8 el usuario pudo mirar con la cabeza, pero informó baja definición, tirones y rango reducido. La sonda limitaba deliberadamente la orientación a 25°; no se ha demostrado una restricción equivalente del cuerpo del AC. La salida estéreo era 1280×720 por ojo, ampliada a un quad de unos 120° horizontales.
 
 Se conserva la ruta de reproyección y sus valores por defecto. Se añaden presets de salida 1280×720, 1920×1080 y 2560×1440; las dimensiones del par fuente no cambian. El productor no necesita modificar el juego ni variar la resolución de su ventana. La selección se aplica a buffers, shaders y swapchains del consumidor. No equivale a añadir detalle que no exista en el render de origen ni a renderizar geometría desde cada ojo.
 
-La orientación publicada admite un límite configurable de 1 a 180°, con el mismo centrado inicial, reflexión Z y aplicación en ejes locales. La siguiente comparación usará 90°; esto no gira el cuerpo ni añade seguimiento de posición. Se mantienen 15 segundos activos, F12 y restauración automática. Una DLL de cámara con nombre y log nuevos evita sobrescribir/reutilizar la anterior, que sigue mapeada e inactiva.
+La orientación publicada admite un límite configurable de 1 a 180°, con el mismo centrado inicial, reflexión Z y aplicación en ejes locales. Las comparaciones posteriores usaron 90°; esto no gira el cuerpo ni añade seguimiento de posición. Se mantienen 15 segundos activos, F12 y restauración automática. Una DLL de cámara con nombre y log nuevos evita sobrescribir/reutilizar la anterior, que sigue mapeada e inactiva.
 
 ## Medición y comparación
 
@@ -16,22 +21,20 @@ El presentador registra tiempos CPU en milisegundos para espera de frame OpenXR,
 
 Durante las mediciones se omiten las dos capturas auxiliares de ventana que antes arrancaban ffmpeg durante el seguimiento. Es una posible fuente de carga adicional, no una causa confirmada de los tirones. El consumidor y la sonda publican sus resultados normales.
 
-Comparación prevista, misma misión y escena tranquila: A = 1280×720/25°, B = 1920×1080/90°, ambas sin capturas auxiliares y con el mismo presentador instrumentado. Cada pasada dura 27 s visibles y 15 s de seguimiento. Se registrará la valoración del usuario y los tiempos, sin atribuir un cambio entre pasadas a una sola variable: B cambia resolución y rango. La medida temporal localiza costes, pero no demuestra por sí sola confort ni mejora visual.
+Comparación realizada en aquella tanda, misma misión y escena tranquila: A = 1280×720/25°, B = 1920×1080/90°, ambas sin capturas auxiliares y con el mismo presentador instrumentado. Cada pasada duró 27 s visibles y 15 s de seguimiento. Se registraron la valoración del usuario y los tiempos, sin atribuir un cambio entre pasadas a una sola variable: B cambia resolución y rango. La medida temporal localiza costes, pero no demuestra por sí sola confort ni mejora visual.
 
 ## Verificación previa
 
 - Pruebas de giro ampliado: el test falló al no existir el parámetro; 90° conserva el giro pedido y el valor por defecto sigue limitado a 25°.
 - Validación de presets/rango y estadísticos conocidos; rechazo de dimensiones mal formadas, rango no finito o fuera de límites, y configuración incompatible con el modo elegido.
 - Test de orquestación comprueba el paso de dimensiones/rango al consumidor correcto y rechaza combinaciones inválidas antes de cargar una sonda.
-- Verificación actual del presentador: cinco CTests correctos. Python: 26 pruebas correctas. Consumidor: cinco CTests GPU correctos, incluidos píxeles/bytes, color, paralaje, tamaños de blit y rechazo de resoluciones no admitidas. Se observó RED antes de implementar 1080p y la validación. Revisiones independientes de integración y cambio GPU sin bloqueantes.
+- Verificación previa de esa tanda del presentador: cinco CTests correctos. Python: 26 pruebas correctas. Consumidor: cinco CTests GPU correctos, incluidos píxeles/bytes, color, paralaje, tamaños de blit y rechazo de resoluciones no admitidas. Se observó RED antes de implementar 1080p y la validación. Revisiones independientes de integración y cambio GPU sin bloqueantes.
 
-## Uso
+## Uso vigente
 
-Solo con PID y DLLs nuevos/no mapeados de la sesión real, cooperativo y misión individual offline confirmados:
-
-```powershell
-.\.venv-analysis\Scripts\python.exe -B tools\run_live_stereo_trial.py --pid <PID> --single-player-confirmed --dll <NUEVA_DLL_PRODUCTOR> --tag quality-new --mode vr --headtracking --camera-dll <NUEVA_DLL_CAMARA> --eye-width 2560 --eye-height 1440 --rotation-limit-deg 90
-```
+Seguir el [procedimiento aislado](docs/VR_TRIAL_RUNBOOK.md), con PID actual,
+sondas nuevas y consumidor elegido explícitamente. Se retira de aquí la
+invocación antigua que podía seleccionar una build fija distinta de la deseada.
 
 ## Referencia medida (A)
 
@@ -58,7 +61,7 @@ El intervalo medio de esta pasada fue 11.749987 ms frente a 24.009254 ms en A, p
 
 Respuesta a B: «podia girar mas, pero tampoco es que note mucho cambio de resolucion, supongo que aun asi es bastante bajo, no he notado especialmente deformaciones o imagen doble». Se confirma mayor rango; no se declara mejor definición ni ausencia de tirones, sobre los que no respondió explícitamente.
 
-Consulta de solo lectura a OpenXR, sin crear sesión, con el mismo nombre de aplicación: recomienda 2804×2860 por ojo, máximo 8192×8192, una muestra. La recomendación corresponde a la vista completa; las capas usadas aquí son quads panorámicos, por lo que no se equiparan directamente sus píxeles. SteamVR publica `supersampleScale=0.68` en su configuración local; no se ha cambiado. Evidencia privada `evidence/xr-view-recommendation-30252.json`. El registro B acredita las dimensiones de nuestra salida, no la resolución efectiva del compositor. Siguiente comparación C: 2560×1440/90°, misma aplicación y fuente, para variar solo el tamaño de salida.
+Consulta de solo lectura a OpenXR, sin crear sesión, con el mismo nombre de aplicación: recomienda 2804×2860 por ojo, máximo 8192×8192, una muestra. La recomendación corresponde a la vista completa; las capas usadas aquí son quads panorámicos, por lo que no se equiparan directamente sus píxeles. SteamVR publica `supersampleScale=0.68` en su configuración local; no se ha cambiado. Evidencia privada `evidence/xr-view-recommendation-30252.json`. El registro B acredita las dimensiones de nuestra salida, no la resolución efectiva del compositor. La comparación C se realizó después a 2560×1440/90°, misma aplicación y fuente, variando solo el tamaño de salida; se registra a continuación.
 
 ## Tercera pasada medida (C): perfil de referencia
 
@@ -79,7 +82,7 @@ Al comparar claridad y tirones con B, el usuario respondió «Se veía más clar
 
 No se modifica la calibración empírica de baseline, escala ni proyecciones OpenXR.
 
-## Corrección posterior de disponibilidad al enviar, solo host
+## Disponibilidad al enviar: caso de caducidad probado en host
 
 La [comprobación final del par](LIVE_STEREO_FINDINGS.md#frescura-al-enviar-el-par--corrección-host-del-18-10-2026)
 rechaza una fuente que caduca o falla después de la última copia/liberación,
@@ -88,3 +91,9 @@ existente; los descartes tardíos se cuentan como `source_discarded_during_frame
 No se han vuelto a medir los tiempos anteriores ni se atribuye una mejora de
 pacing o latencia a este cambio. Las esperas del runtime posteriores a la
 consulta siguen fuera de esa comprobación de edad.
+
+La ruta normal con esta comprobación se aceptó después en la regresión física
+PR #8: 1217 envíos visibles, sin pérdidas ni descartes durante frame. No se
+forzó caducidad después del último ojo en PSVR2. Los intervalos CPU de aquella
+pasada fueron media 23.442012 ms, p95 34.6638 ms y máximo 1560.4146 ms con
+esperas; no son una comparación controlada con V11 ni una mejora demostrada.

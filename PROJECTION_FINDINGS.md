@@ -1,6 +1,8 @@
 # Proyección observada y reproyección estéreo offline — 16-10-2026
 
-> **Estado actualizado (18-10-2026):** el prototipo PSVR2 ya ha demostrado **estéreo continuo reproyectado desde profundidad combinado con orientación de cabeza calibrada**. En una prueba acotada de 2560×1440 por ojo y 90° se observó mayor nitidez y ningún tirón apreciable. Esto no acredita una conversión VR completa ni comodidad prolongada. El estado vigente está en [README.md](README.md), [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) y [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md). Los procedimientos y gates anteriores que siguen a continuación se conservan como historial.
+Estado vigente y alcance de las aceptaciones: [STATUS](docs/STATUS.md).
+Para repetir, [procedimiento actual](docs/VR_TRIAL_RUNBOOK.md); los comandos
+de escenas fijas al final pertenecen al ensayo histórico.
 
 Se ha observado la matriz perspectiva real que devuelve un helper de AC6, reconstruido profundidad en unidades del juego y generado dos vistas distintas de una captura guardada. Existe una referencia NumPy y un diagnóstico D3D12 independiente. El par fijo ya se ha mostrado en OpenXR y el usuario confirmó profundidad sin imagen doble. **Actualización posterior, 18-10-2026:** el estéreo continuo reproyectado ya se observó en PSVR2 y se combinó con orientación de cabeza durante ventanas acotadas; el perfil de referencia es 2560×1440 por ojo / 90°. Esta nota conserva la evidencia de la fase offline. Véanse [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) y [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md).
 
@@ -232,11 +234,10 @@ misma secuencia y al mismo slot, con rechazo de ausencias y desajustes. No se
 ofrece una API que acepte datos etiquetados como frame-matched sin esa prueba.
 La presentación sigue usando quads, sin poses/FOV asimétricos ni escala IPD.
 
-Siguiente comprobación física de regresión: una ventana de 20 s con el perfil
-ya probado 2560×1440/90°, girando lentamente la vista con el mando frente a
-un borde cercano y un fondo lejano, y confirmar profundidad fusionable sin
-duplicación ni congelación. Requiere preparación habitual y DLLs nuevas/no
-mapeadas; no se ha realizado durante esta sesión.
+La regresión física prevista se realizó después con el perfil 2560×1440/90°,
+27 s visibles y 15 s de seguimiento, según el apartado siguiente. La aceptación
+posterior de PR #8 está en [LIVE_STEREO_FINDINGS](LIVE_STEREO_FINDINGS.md). Esto
+no completa la integración temporal de matriz/jitter descrita arriba.
 
 ## Validación física posterior del PR #4 — 18-10-2026
 
@@ -257,7 +258,7 @@ máximo 359.2362 ms, con esperas; no acredita mejora de rendimiento/latencia ni
 comodidad prolongada. Evidencia privada en
 `out/psvr2-pr4-6796-v12/evidence/pr4-1440p90-v12-6796-physical-acceptance.json`.
 
-Continuación independiente, aún solo host: [intrínsecos distintos por ojo](docs/EYE_PROJECTION_CONTRACT.md).
+Continuación integrada en `main`, aún solo host: [intrínsecos distintos por ojo](docs/EYE_PROJECTION_CONTRACT.md).
 La aceptación física anterior corresponde al PR #4 y no al modo nuevo.
 
 Corrección posterior de las referencias offline: [orden de profundidad y límites
@@ -289,6 +290,6 @@ Ponte el visor y cierra el panel SteamVR antes de empezar. F12 cancela. Hay un m
 
 ### Integración continua: transición posterior del monitor al visor
 
-El productor D3D12 ya comparte pares continuos color/depth mediante recursos y fences; otro proceso genera dos ojos en GPU sin readback en la ruta normal. El ensayo de monitor ha superado esta parte técnica (ver `LIVE_STEREO_FINDINGS.md`). **Actualización del 18-10-2026:** el paso al visor ya está confirmado con profundidad y escena viva (V7), junto con orientación de cabeza (V8) y prueba de salida 2560×1440/90° (V11). Sigue pendiente asociar proyección/jitter y cámara al mismo snapshot, establecer metros por unidad, reproyectar con poses y FOV asimétricos de cada ojo, tratar HUD/oclusiones y medir latencia/comodidad. La orientación de cabeza confirmada previamente no sustituye estas validaciones.
+El productor D3D12 ya comparte pares continuos color/depth mediante recursos y fences; otro proceso genera dos ojos en GPU sin readback en la ruta normal. El ensayo de monitor ha superado esta parte técnica (ver `LIVE_STEREO_FINDINGS.md`). **Actualización del 18-10-2026:** el paso al visor ya está confirmado con profundidad y escena viva (V7), junto con orientación de cabeza (V8) y prueba de salida 2560×1440/90° (V11), seguida por regresiones físicas aceptadas de PR #4 y PR #8. El alcance vigente está en [STATUS](docs/STATUS.md). Sigue pendiente asociar proyección/jitter y cámara al mismo snapshot, establecer metros por unidad, reproyectar con poses y FOV asimétricos de cada ojo, tratar HUD/oclusiones y medir latencia/comodidad. La orientación de cabeza confirmada previamente no sustituye estas validaciones.
 
 Referencias primarias usadas para la ruta GPU: [InterlockedMin y ausencia de barrera implícita](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/interlockedmin), [barreras UAV y estados D3D12](https://learn.microsoft.com/en-us/windows/win32/direct3d12/using-resource-barriers-to-synchronize-resource-states-in-direct3d-12), [root descriptors y ausencia de comprobación de límites](https://learn.microsoft.com/en-us/windows/win32/direct3d12/root-signatures-overview).

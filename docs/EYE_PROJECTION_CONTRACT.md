@@ -1,10 +1,11 @@
 # Intrínsecos distintos por ojo: contrato experimental de host
 
 Base: `8b8ee37` (PR #4), validada después en una prueba física acotada de
-PSVR2 a 2560×1440/90°. Este incremento se desarrolla en otra rama y **no añade
-un resultado visual** al modo nuevo. No modifica la rama ni los binarios de
-esa prueba. No añade opciones al presentador, hooks, sesiones VR ni datos por
-fotograma.
+PSVR2 a 2560×1440/90°. El incremento está ahora integrado en `main` y **no
+añade un resultado visual** al modo opcional. La aceptación posterior del
+PR #8 usó el modo predeterminado, no estos intrínsecos/FOV alternativos.
+No añade opciones al presentador, hooks, sesiones VR ni datos por fotograma.
+Consultar [estado verificado](STATUS.md) para el alcance actual.
 
 ## Qué limitación elimina
 

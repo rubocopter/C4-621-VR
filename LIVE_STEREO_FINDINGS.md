@@ -1,4 +1,9 @@
-# Captura continua y reproyección GPU — 16-10-2026
+# Captura continua y reproyección GPU — historial desde 16-10-2026
+
+Estado vigente: [validación física/host y pendientes](docs/STATUS.md).
+Procedimiento actual: [ensayo aislado 2560×1440/90°](docs/VR_TRIAL_RUNBOOK.md).
+La última aceptación física del PR #8 está al final de este informe; los
+contadores y gates anteriores describen cada etapa histórica.
 
 **Estado: estéreo continuo y seguimiento de cabeza confirmados en PSVR2; perfil 1440p/90° observado más claro y sin tirones apreciables en la prueba acotada.** Ruta experimental posterior a la escena fija confirmada por el usuario. Tres buffers DEFAULT compartidos llevan pares color/depth desde AC6 hasta otro proceso D3D12. Ese proceso reconstruye dos ojos en GPU, sin lectura de píxeles en CPU salvo previews diagnósticos. El modelo perspectiva y baseline siguen siendo los de la investigación previa; no hay escala métrica calibrada, proyecciones asimétricas ni tratamiento del HUD.
 
@@ -12,7 +17,7 @@ Metadata versionada de 120 bytes, acceso mediante Interlocked a campos compartid
 
 ## Consumidor
 
-`native/live_stereo` abre handles con nombre y valida versión, rangos, LUID, descriptores y exclusividad. Soporta entrada R10G10B10A2, RGBA8 y BGRA8 con pitches/offsets. Cuatro fases de compute por ojo, ordenación por depth original e índices acotados antes de Load. Salida RGBA/BGRA 1280×720, huecos negros opacos. `Blit` copia por GPU a una textura RENDER_TARGET y restaura ese estado.
+`native/live_stereo` abre handles con nombre y valida versión, rangos, LUID, descriptores y exclusividad. Soporta entrada R10G10B10A2, RGBA8 y BGRA8 con pitches/offsets. Cuatro fases de compute por ojo, ordenación por depth original e índices acotados antes de Load. Salida RGBA/BGRA 1280×720 por defecto, con presets posteriores hasta 2560×1440; huecos negros opacos. `Blit` copia por GPU a una textura RENDER_TARGET y restaura ese estado.
 
 Espera síncrona de GPU en el **proceso consumidor**, acotada a 5 s. Un fallo en vuelo termina ese proceso con recursos retenidos, nunca AC6. Las imágenes caducan a los 500 ms; las publicaciones viejas se retiran sin leer sus píxeles para liberar un anillo envejecido. El nuevo consumidor excluye secuencias ya liberadas por el anterior.
 
@@ -27,7 +32,7 @@ presentador. El perfil histórico sigue por defecto, ahora registrado con
 procedencia y `frame_associated:false`. No cambia el protocolo v1 de 120 bytes,
 baseline, frescura, fences ni presentación. Véase el
 [contrato y pruebas de proyección](PROJECTION_FINDINGS.md#contrato-de-proyección-verificable-en-host--18-10-2026).
-No se ha añadido una validación física a los ensayos de visor descritos abajo.
+La tanda host no incluyó visor; posteriormente se aceptaron físicamente PR #4 y PR #8, registrados en este informe y en `PROJECTION_FINDINGS.md`.
 
 - Tres CTests del productor: límites/frescura/propiedad; pares GPU cambiantes con saturación, descarte, reanudación y resize; gate GPU pendiente, envío único, rechazo de color sin depth nuevo y publicación de fallo. El gate observa lotes simulados para comprobar la decisión, y el otro fixture comprueba copias reales.
 - Dos CTests del consumidor: procesos y dispositivos D3D12 separados, formatos/padding, colores/previews/blits exactos, paralaje y oclusión, fences retrasadas, saltos, reconexión, stale/Stopped y terminación acotada en vuelo. Debug layer no disponible en el entorno.
@@ -49,7 +54,7 @@ Ensayo monitor `evidence/live-stereo-monitor-v1-5440-result.json`, misión offli
 
 Se inspeccionaron previews de ambos ojos al principio y al final. Los contadores no representan frecuencia del visor ni miden latencia de movimiento; el consumidor puede saltar secuencias. Se leen píxeles solo para esos previews.
 
-## Repetición
+## Evolución de los ensayos
 
 ### Corrección al reanudar (18-10-2026)
 
@@ -67,48 +72,35 @@ La captura monitor V4 de esta misma sesión terminó correctamente: 724 pares, 5
 
 La observación V5 durante 60 s tampoco reprodujo otra cola: 194460 envíos, tres pares y 6942 descartes al llenar el anillo sin consumidor. Se verificó la retirada de hooks. La pila de la única cola incluye DXGI, Steam y Discord; esto no permite atribuir la segunda cola anterior a ninguno de ellos. Evidencia privada: `evidence/queue-observe-v5-30252.json`.
 
-La repetición V6 en PSVR2 terminó con ambos procesos en código 0: 2346 pares, 147 descartes del productor y 1630 actualizaciones del consumidor. SteamVR contabilizó 1695 frames enviados, visibles y enfocados; cero eventos de pérdida de captura y cero fuentes descartadas durante el frame. Se restauraron los siete hooks y la sonda quedó inactiva. El seguimiento de cabeza estaba desactivado. Evidencia privada: `evidence/live-stereo-vr-v6-30252-result.json` y `evidence/live-stereo-vr-v6-30252.jsonl`. Estos datos acreditan envío y consumo, pendiente aún la valoración visual del usuario.
+La repetición V6 en PSVR2 terminó con ambos procesos en código 0: 2346 pares, 147 descartes del productor y 1630 actualizaciones del consumidor. SteamVR contabilizó 1695 frames enviados, visibles y enfocados; cero eventos de pérdida de captura y cero fuentes descartadas durante el frame. Se restauraron los siete hooks y la sonda quedó inactiva. El seguimiento de cabeza estaba desactivado. Evidencia privada: `evidence/live-stereo-vr-v6-30252-result.json` y `evidence/live-stereo-vr-v6-30252.jsonl`. En aquel ensayo los datos acreditaban envío y consumo; faltaba aún la valoración visual del usuario.
 
-Primera descripción del usuario: «veia una imagen como si fuese una ventana, en la cual habia elementos en diferentes profundidades como si fuese un parallax». La ventana corresponde a los quads LOCAL elegidos para comparar con el ensayo fijo. Se solicita confirmar actualización al girar con mando y ausencia de duplicación/congelaciones antes de activar seguimiento de cabeza con esta ruta.
+Primera descripción del usuario: «veia una imagen como si fuese una ventana, en la cual habia elementos en diferentes profundidades como si fuese un parallax». La ventana corresponde a los quads LOCAL elegidos para comparar con el ensayo fijo. Se solicitó confirmar actualización al girar con mando y ausencia de duplicación/congelaciones antes de activar seguimiento de cabeza; la respuesta posterior se registra a continuación.
 
 El usuario no había podido mover la vista con Sense y el ratón. Este prototipo no traduce Sense a controles del juego. Conectó su mando convencional, confirmó su funcionamiento en monitor y repitió con AC6 en primer plano. V7: 2197 pares, 294 descartes, 1349 actualizaciones y 1408 frames visibles/enfocados, sin pérdidas ni fuentes descartadas; ambos procesos en código 0 y hooks restaurados. Respondió «Sí, se actualizaba con profundidad y sin verse doble» a la comprobación de giro con stick, profundidad, duplicación y congelaciones. Esto supera el gate de pantalla estéreo viva; no acredita todavía seguimiento unido a estéreo, escala métrica ni comodidad prolongada. Evidencia: `evidence/live-stereo-controller-v7-30252-result.json` y `evidence/live-stereo-controller-v7-30252.jsonl`.
 
 ### Prueba conjunta de estéreo y orientación (18-10-2026)
 
-V8/PID30252 usa la misma reproyección GPU, con los quads amplios en VIEW y publicación de pose de esa sesión OpenXR. Captura durante 27 s visibles y sonda de cámara calibrada durante 15 s, límite de 25° conservado. Productor: 2460 pares, 790 descartes, una cola y sin fallos. Presentador: 1185 frames visibles/enfocados, 1133 actualizaciones, 1185 poses publicadas válidas, cero pérdidas de captura/fuentes descartadas. Cámara: 1717 aplicaciones, cero excepciones y prologue restaurado. Los tres procesos terminaron en código 0 y se retiraron los hooks de captura. Evidencia privada: `evidence/live-stereo-tracking-v8-30252-result.json`, `evidence/live-stereo-tracking-v8-30252.jsonl` y `evidence/live-stereo-tracking-v8-30252-camera.json`. Valoración visual conjunta pendiente; los contadores no acreditan fluidez ni comodidad.
+V8/PID30252 usa la misma reproyección GPU, con los quads amplios en VIEW y publicación de pose de esa sesión OpenXR. Captura durante 27 s visibles y sonda de cámara calibrada durante 15 s, límite de 25° conservado. Productor: 2460 pares, 790 descartes, una cola y sin fallos. Presentador: 1185 frames visibles/enfocados, 1133 actualizaciones, 1185 poses publicadas válidas, cero pérdidas de captura/fuentes descartadas. Cámara: 1717 aplicaciones, cero excepciones y prologue restaurado. Los tres procesos terminaron en código 0 y se retiraron los hooks de captura. Evidencia privada: `evidence/live-stereo-tracking-v8-30252-result.json`, `evidence/live-stereo-tracking-v8-30252.jsonl` y `evidence/live-stereo-tracking-v8-30252-camera.json`. La respuesta visual se registra debajo; los contadores no acreditan fluidez ni comodidad.
 
 La revisión del diagnóstico detectó conversión CRT dependiente del locale en nombres Unicode de DLL. El test falló con `%ls`; se sustituyó por escapes JSON ASCII que conservan unidades UTF-16 y pares sustitutos. Se comprueban errores de escritura y flush de los nuevos registros tras retirar hooks. Tres CTests del productor correctos y revisión posterior sin bloqueantes. DLL V8 SHA-256 `a72440afc15bc4d9f7f27b21a25f5366e695669f6b321df6c3d0de816bee3947`; presentador SHA-256 `f71e384b0c4ddf48613b741469f15aab6c2018ec629b3fba0b52dca636e65f33`.
 
-Respuesta a V8: «podia mirar con la cabeza aunque la resolucion es super baja, notaba algun tiron y no podia mirar todo el rango que podia con el mando, aunque supongo que va atado a la \"cabeza\" del cuerpo y el cuerpo no se mueve». Se confirma movimiento por cabeza, sin dar por validada comodidad/fluidez. El límite de 25° es del prototipo y no acredita una restricción del cuerpo. La salida es 1280×720 por ojo ampliada al quad de ~120°; aún no se separan costes de espera OpenXR, reproyección, copia y compositor. Siguiente trabajo: rango y resolución configurables, instrumentación temporal y una nueva comparación acotada.
+Respuesta a V8: «podia mirar con la cabeza aunque la resolucion es super baja, notaba algun tiron y no podia mirar todo el rango que podia con el mando, aunque supongo que va atado a la \"cabeza\" del cuerpo y el cuerpo no se mueve». Se confirma movimiento por cabeza, sin dar por validada comodidad/fluidez. El límite de 25° es del prototipo y no acredita una restricción del cuerpo. La salida es 1280×720 por ojo ampliada al quad de ~120°; aún no se separan costes de espera OpenXR, reproyección, copia y compositor. El siguiente trabajo de aquella etapa fue añadir rango/resolución configurables, instrumentación temporal y comparaciones acotadas, realizadas después como describe el enlace siguiente.
 
 Seguimiento de estos problemas: [definición, giro y tiempos de presentación](QUALITY_PACING_FINDINGS.md). Se implementan presets, límite seleccionable y tiempos CPU con esperas; las pasadas V9 y V10 completaron correctamente 720p/25° y 1080p/90° respectivamente. La respuesta visual comparativa se registra en ese documento; no asumir que más resolución resuelve los tirones.
 
-### Construcción y ejecución
+### Procedimiento vigente
 
-Compilar consumidor, presentador y una DLL **aún no mapeada**:
-
-```powershell
-cmake -S native\live_stereo -B native\live_stereo\build -G 'Visual Studio 17 2022' -A x64
-cmake --build native\live_stereo\build --config Release
-ctest --test-dir native\live_stereo\build -C Release --output-on-failure
-cmake -S native\live_pair_stream -B native\live_pair_stream\build -G 'Visual Studio 17 2022' -A x64 -DLIVE_PAIR_PROBE_NAME=ac6_live_pair_probe_v2
-cmake --build native\live_pair_stream\build --config Release
-cmake --build native\xr_display_probe\build --config Release --target ac6_xr_display_probe
-```
-
-PID, versión y tag deben corresponder a la sesión real. El script valida identidad/cooperativo/EAC conocido, espera al productor, abre el consumidor y solicita retirar la captura al terminar. No modifica archivos del juego ni fuerza descarga de DLLs.
-
-```powershell
-.\.venv-analysis\Scripts\python.exe -B tools\run_live_stereo_trial.py --pid <PID> --single-player-confirmed --dll native\live_pair_stream\build\Release\ac6_live_pair_probe_v2.dll --tag live-new --mode monitor
-```
-
-Para el **siguiente gate de visor**, repetir la invocación anterior con un nombre de DLL nuevo, tag nuevo y `--mode vr`, con visor puesto y SteamVR sin paneles. La imagen dura 20 s desde VISIBLE. **Criterio de éxito:** ambos ojos reciben una escena que cambia al moverse el juego, la profundidad resulta fusionable sin imagen doble y no se observan congelaciones ni fallos de sesión durante la ventana. Conservar el `*-result.json`, `*.jsonl` del presentador y el resumen nativo, junto con una breve descripción literal de lo observado por el usuario (incluidas molestias o defectos); los contadores por sí solos no acreditan comodidad/fusión. `--headtracking` añade la sonda de cámara de 15 s y exige que esta tampoco esté mapeada; no activarla hasta comprobar primero la imagen viva estéreo. Datos del juego, logs y capturas quedan fuera del repositorio.
+Usar la [prueba acotada de estéreo continuo](docs/VR_TRIAL_RUNBOOK.md): build
+nueva aislada, nombres de DLL no mapeados, consumidor explícito y perfil
+2560×1440/90° con orientación. Se retiran los comandos históricos de productor
+v2 y la indicación de que el primer gate de estéreo en visor sigue pendiente:
+esa puerta ya se superó. No se modifican herramientas ni evidencia anterior.
 
 Referencias primarias: [handles compartidos D3D12 y namespace](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12device-createsharedhandle), [apertura por nombre](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12device-opensharedhandlebyname).
 
 ## Frescura al enviar el par — corrección host del 18-10-2026
 
-Base `0202774` (PR #7), rama `codex/stereo-submit-freshness-20261018`.
+Base histórica `0202774` (PR #7); cambio posterior del PR #8 integrado en `main`.
 La comprobación previa a cada `TryBlit` no cubría el tiempo que tarda la
 última copia GPU y `xrReleaseSwapchainImage`: ambos ojos podían devolver éxito
 y aun así superar los 500 ms antes de construir el envío de dos capas.
@@ -178,9 +170,8 @@ baseline0.5, presets o rango de orientación. Se mantiene la presentación de
 pares válidos y se rechaza el caso tardío antes admitido. Sin inicio de
 AC6/SteamVR/OpenXR ni prueba física en esta tanda; los resultados de visor
 anteriores pertenecen a sus respectivos builds. No se afirma una mejora visual,
-de rendimiento o comodidad. Próxima regresión física, cuando se retome el visor:
-20 s con 2560x1440/90°, giro lento frente a borde cercano/fondo lejano, comprobar
-escena viva fusionable sin congelación/duplicación; sin forzar bloqueos GPU.
+de rendimiento o comodidad. La regresión física posterior de 27 s se registra
+a continuación; no forzó bloqueos GPU ni la caducidad tardía de los tests.
 
 ## Regresión física posterior del PR #8 — 18-10-2026
 
@@ -219,4 +210,5 @@ Evidencia privada en
 `out/psvr2-pr8-19588-v13/evidence/pr8-1440p90-v15-6844-physical-acceptance.json`,
 su `*-result.json`, JSONL y `*-camera.json`. Los intentos bloqueados se conservan
 en `pr8-19588-physical-trial-blocked.json` bajo el mismo directorio. Esta nota
-se registra en la rama posterior; el PR #8 no se modifica ni se fusiona.
+se registró en la rama posterior; PR #4–#9 se integraron después en `main`.
+La aceptación corresponde a `1dc8403`, sin extenderse a cambios futuros.

@@ -3,7 +3,7 @@
 Fecha: 15-10-2026. Binario inspeccionado: `armoredcore6.exe`, versión PE 1.9.0.0.
 SHA-256: `e003771e5548bca91882c1d7dfe2df3de97cee05c2c989d0c0e34b036ea610d6`.
 
-**Estado más reciente:** imagen de AC6 dentro de PSVR2 y seguimiento de orientación combinado, con horizontal y vertical corregidos y confirmados por el usuario. Prueba temporal de 15 s con límite de 25°, desactivada al terminar. Sin estereoscopía de la geometría del juego. Véase `VR_DISPLAY_FINDINGS.md`; las secciones de este archivo describen la investigación y la primera prueba en monitor.
+**Alcance histórico:** investigación de cámara y primeros ensayos del 15-10. La prueba de entonces combinó imagen monoscópica y orientación calibrada durante 15 s, limitada a 25°. Después se aceptó estéreo continuo con orientación a 2560×1440/90°, sin dos renders geométricos independientes. Véanse [estado verificado](docs/STATUS.md) y [procedimiento vigente](docs/VR_TRIAL_RUNBOOK.md). Las firmas/observaciones siguientes pertenecen al binario indicado, no a cualquier versión del juego.
 
 ## Resultado
 
@@ -37,9 +37,9 @@ El script solo lee el ejecutable y genera un informe en el proyecto. El informe 
 
 El usuario confirma haber iniciado por el launcher cooperativo y jugado en primera persona sin problemas. La lectura local de `GraphicsConfig.xml` confirma `DepthOfField=DISABLE`, fullscreen configurado a 2560×1440 y `MotionBlur=HIGH`. No se ha cambiado el XML. En el momento del reconocimiento no había proceso `armoredcore6` activo.
 
-## Siguiente validación
+## Validación prevista en la fase inicial
 
-Obtener el objeto capturado por la primera firma durante gameplay, observar una matriz finita/ortonormal que responda a la cámara y distinguirla de menús/fotomodo. Después, validar una composición reversible de la orientación de cabeza con la cámara base. Siguen pendientes sincronización con el renderer, sesiones OpenXR y dos proyecciones por ojo: una coincidencia estática no demuestra VR funcional.
+Obtener el objeto capturado por la primera firma durante gameplay, observar una matriz finita/ortonormal que responda a la cámara y distinguirla de menús/fotomodo. Después, validar una composición reversible de la orientación de cabeza con la cámara base. En esa etapa seguían pendientes sincronización con el renderer, sesiones OpenXR y dos proyecciones por ojo: una coincidencia estática no demostraba VR funcional. Los avances posteriores no resuelven aún la asociación temporal de cámara/matriz/jitter con la captura.
 
 ## Análisis nativo directo con Ghidra 12.1.4
 
@@ -89,7 +89,7 @@ La cadena estática **sí se puede recorrer en esta misión**. Valores específi
 
 Datos: `evidence/camera-live-20261015-me2-first.jsonl`, `evidence/camera-live-20261015-me2-look-only.jsonl` y `evidence/camera-live-summary.json`. Los tiempos de control manual fueron aproximados y no se registraron imagen/input: el movimiento no quedó restringido exactamente a la ventana intermedia.
 
-**Conclusión delimitada:** se ha validado en ejecución una transformación viva, coherente y compatible con la cámara durante la misión. La asociación se apoya en el flujo estático de copia, la estructura de la matriz y la respuesta de orientación en la prueba guiada. Falta verificar si modificar esta copia afecta al renderer o si es solo un espejo actualizado por el juego. No se ha escrito en ella ni implementado seguimiento de cabeza/estereoscopía.
+**Conclusión delimitada:** se ha validado en ejecución una transformación viva, coherente y compatible con la cámara durante la misión. La asociación se apoya en el flujo estático de copia, la estructura de la matriz y la respuesta de orientación en la prueba guiada. En aquella observación faltaba verificar si modificar la copia afectaba al renderer o si era un espejo; aún no se había escrito en ella ni implementado seguimiento/estéreo. Los ensayos posteriores de escritura/hook se registran a continuación y la aceptación actual está en [STATUS](docs/STATUS.md).
 
 Repetición: `python -B tools/observe_camera.py --pid <PID actual> --single-player-confirmed --seconds 20 --output evidence/<nombre-nuevo>.jsonl`. Elegir una misión individual con el launcher de mods y comprobar el estado de conexión; la sonda no lo determina por la presencia de ModEngine. El programa se detiene tras tres errores consecutivos y nunca sobreescribe una captura existente.
 

@@ -2,6 +2,9 @@
 
 15-10-2026, AC6 1.9.0.0, sesión individual offline confirmada por el usuario, PID 17628. Se recuperaron **color y profundidad en una sola lista privada de GPU**, añadida al mismo envío gráfico del juego. Es un diagnóstico puntual de ocho segundos, no una ruta persistente de estéreo.
 
+Informe de una captura histórica; [estado vigente](docs/STATUS.md) y
+[procedimiento de estéreo continuo](docs/VR_TRIAL_RUNBOOK.md).
+
 ## Resultado real
 
 La versión final V4 escribió `evidence/pair-live-v4-17628.json` y dos raws privados. El cargador terminó con código 0.
@@ -62,6 +65,6 @@ Se guardan PNG de color/depth/contornos, una comparación, depth `.npy` sin norm
 
 La copia conjunta demuestra una muestra coherente de los dos recursos en ese punto de la cola. No identifica el número de frame interno del motor, ni prueba que no haya más dibujo después del envío elegido o que un efecto use datos temporales. Una investigación posterior observó el modelo de proyección y la fórmula de jitter, pero no los asoció al mismo frame de esta captura. Profundidad métrica, escala del AC/IPD y colorimetría/HDR siguen pendientes.
 
-La imagen VR en vivo sigue siendo monoscópica. Ya se generan vistas separadas offline desde una nueva captura, en CPU y D3D12; resultados, repetición y límites en [PROJECTION_FINDINGS.md](PROJECTION_FINDINGS.md). La integración continua por GPU y las vistas asimétricas de OpenXR son trabajo pendiente.
+En aquella etapa la imagen VR en vivo aún era monoscópica y se generaban vistas separadas offline en CPU/D3D12; véase [PROJECTION_FINDINGS](PROJECTION_FINDINGS.md). Posteriormente se aceptó estéreo continuo reproyectado con orientación en PSVR2. La asociación temporal de proyección/jitter y las poses/FOV asimétricos del visor siguen pendientes; el [estado actual](docs/STATUS.md) delimita su alcance.
 
 Referencias primarias: [estados y barreras D3D12](https://learn.microsoft.com/en-us/windows/win32/direct3d12/using-resource-barriers-to-synchronize-resource-states-in-direct3d-12), [ExecuteCommandLists](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12commandqueue-executecommandlists), [grabación, reutilización y referencias](https://learn.microsoft.com/en-us/windows/win32/direct3d12/recording-command-lists-and-bundles), [ResizeBuffers](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-resizebuffers).
