@@ -17,6 +17,17 @@ import time
 from observe_camera import EXPECTED_EXE, EXPECTED_SHA, process_metadata
 
 
+def select_consumer(root, mode, explicit=None):
+    defaults = {'vr': 'native/xr_display_probe/build/Release/ac6_xr_display_probe.exe',
+                'monitor': 'native/live_stereo/build/Release/live_stereo_monitor.exe'}
+    if mode not in defaults:
+        raise ValueError('Unknown consumer mode')
+    executable = Path(explicit if explicit is not None else Path(root) / defaults[mode]).resolve()
+    if executable.suffix.lower() != '.exe' or not executable.is_file():
+        raise ValueError(f'Consumer executable must be an existing .exe file: {executable}')
+    return executable
+
+
 def consumer_command(exe, mode, mapping, prefix, log, pid, tracking, width, height, rotation_limit):
     if (width, height) not in ((1280, 720), (1920, 1080), (2560, 1440)):
         raise ValueError('Unsupported eye size')
@@ -99,6 +110,7 @@ def main():
     p.add_argument('--eye-height', type=int, default=720)
     p.add_argument('--rotation-limit-deg', type=float, default=25)
     p.add_argument('--camera-dll', type=Path)
+    p.add_argument('--consumer-exe', type=Path, help='Explicit isolated consumer build; missing paths never fall back')
     args = p.parse_args()
     if args.pid <= 0 or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', args.tag):
         p.error('Invalid PID or new evidence tag')
@@ -108,6 +120,11 @@ def main():
         p.error('Camera DLL requires head tracking')
     try:
         consumer_command('', args.mode, '', Path('.'), Path('.'), args.pid, args.headtracking, args.eye_width, args.eye_height, args.rotation_limit_deg)
+    except ValueError as error:
+        p.error(str(error))
+    root = Path(__file__).resolve().parents[1]
+    try:
+        app_exe = select_consumer(root, args.mode, args.consumer_exe)
     except ValueError as error:
         p.error(str(error))
     dll = args.dll.resolve(strict=True)
@@ -122,15 +139,9 @@ def main():
             raise RuntimeError('Different game build')
     if dll.name.lower() in modules:
         raise RuntimeError('Producer DLL already mapped; build a new name, never unload/overwrite it')
-    root = Path(__file__).resolve().parents[1]
-    display = root / 'native/xr_display_probe/build/Release/ac6_xr_display_probe.exe'
-    monitor = root / 'native/live_stereo/build/Release/live_stereo_monitor.exe'
     camera = (args.camera_dll or root / 'native/camera_probe/build/Release/ac6_headtracking_calibrated_probe.dll').resolve()
     if args.headtracking and not re.fullmatch(r'ac6_headtracking_calibrated_probe(?:_v[1-9][0-9]*)?\.dll', camera.name):
         p.error('Select a calibrated headtracking probe')
-    app_exe = monitor if args.mode == 'monitor' else display
-    if not app_exe.is_file():
-        raise RuntimeError('Build the consumer first')
     if args.headtracking and (not camera.is_file() or camera.name.lower() in modules or camera.with_name(f'{camera.stem.removeprefix("ac6_")}_{args.pid}.jsonl').exists()):
         raise RuntimeError('Camera probe requires a new session without a mapped/calibrated probe or existing log')
     folder = root / 'evidence'
@@ -150,6 +161,7 @@ def main():
                   auxiliary_screenshots=False,
                   source_is_live=True, depth_reprojected_stereo=True, metric_scale_calibrated=False,
                   producer_sha256=hashlib.sha256(dll.read_bytes()).hexdigest(),
+                  consumer_executable=str(app_exe),
                   consumer_sha256=hashlib.sha256(app_exe.read_bytes()).hexdigest())
     app = None
     with loader_log.open('x', encoding='utf-8') as producer_output, console.open('x', encoding='utf-8') as consumer_output:

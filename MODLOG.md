@@ -314,3 +314,28 @@ La primera persona ya está probada por el usuario y Depth of Field ya está des
   `docs/DEPTH_REFERENCE_PRECISION.md`. Producción, shaders y protocolos intactos.
 - GREEN:14 CTests live,40 Python correctos y un test GPU opcional omitido
   explícitamente; sintaxis/diff correctos. Revisión independiente sin hallazgos.
+
+## 2026-10-18 — consolidación en main y elección explícita del consumidor
+
+- Por petición del responsable, se integra la cadena completa PR #4–#9 en
+  `main` mediante merge que conserva los doce commits. GitHub marca los seis
+  PR como fusionados; el árbol integrado coincide exactamente con `655fadb`.
+  `development` también estaba incluido. Copia recuperable previa de las refs
+  en `out/main-consolidation-20261018/before-consolidation.bundle`.
+- Se continúa en `main`. El lanzador de ensayos admite `--consumer-exe` para
+  ejecutar directamente la build aislada elegida, sin el staging de scripts
+  necesario en las pruebas anteriores. Registra ruta absoluta y SHA256 del
+  mismo ejecutable usado en el comando; defaults históricos conservados.
+- Pruebas primero: selector ausente y argumento CLI desconocido, RED observado.
+  GREEN para selección explícita frente a una build antigua existente, ambos
+  modos, rutas con espacios, defaults y rechazo de fichero ausente/directorio/
+  extensión incorrecta. El rechazo CLI ocurre antes de acceder al proceso.
+- CI de integración `39131037741` correcto. Solo quedan `main` local y remoto;
+  se retiran refs auxiliares tras comprobar inclusión de commits o igualdad
+  de árbol con su squash merge, con leases contra cambios remotos concurrentes.
+  Las refs previas siguen recuperables en el bundle local; no se borran DLLs.
+- Cierre de herramientas:44 pruebas Python correctas y una opcional omitida,
+  incluidos comando/informe del ensayo simulado completo. Sintaxis/diff y
+  revisión independiente correctos. El mock no ejecuta binarios ni carga sondas.
+- Sin cambios de captura, shader, reproyección, presentación o protocolo; no
+  se inicia juego/SteamVR ni se cargan sondas para esta mejora de herramientas.

@@ -57,6 +57,33 @@ Read [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) and [QUALITY_PACING_FIND
 
 The loader checks a specific executable path/hash and requires a cooperatively launched, separately confirmed single-player/offline session; it is **not** a general-purpose injector. Do not run experiments in official matchmaking or with anti-cheat active. Use a new PID, never reuse mapped DLL names, and never force-unload a mapped diagnostic DLL. Stop with F12 and verify hook restoration. Avoid publishing private game assets or diagnostic captures.
 
+### Select the exact consumer build
+
+`tools/run_live_stereo_trial.py --consumer-exe <path-to-consumer.exe>` selects an
+isolated consumer build directly, without copying scripts or placing the binary
+in the historical `native/*/build/Release` location. Use a display executable for
+`--mode vr` or a monitor executable for `--mode monitor`. For example, after
+building the display into a fresh `out/current-display` directory, add:
+
+```powershell
+--consumer-exe out/current-display/Release/ac6_xr_display_probe.exe
+```
+
+This is an argument to the existing bounded trial command, not a standalone
+launch command. The trial report records `consumer_executable` as an absolute
+resolved path alongside `consumer_sha256`. An explicit missing path, directory
+or non-EXE is rejected before inspecting the game process; it never falls back
+to an older build. Omitting the option retains the historical default paths.
+All identity, offline confirmation, DLL freshness and GPU shutdown gates remain.
+
+### Working branch
+
+`main` contains the integrated source and technical evidence from PRs #4–#9.
+The project owner uses this as the working branch. The prior stacked branches
+are no longer required to obtain the validated source. Host-tested optional
+intrinsics/FOV code remains disabled in presentation; the bounded headset
+acceptance is documented separately in `LIVE_STEREO_FINDINGS.md`.
+
 ### Known limits
 
 - Reprojection uses **one** color/depth source, not two geometry renders.
