@@ -144,7 +144,14 @@ def analyze_context_forwarding(events):
                     raise ValueError('unknown forwarding status')
             except (KeyError, TypeError, ValueError):
                 errors.append('invalid_forwarding_snapshot')
-    status = ('complete' if invocations else 'no_coverage') if not errors else 'rejected'
+    if errors:
+        status = 'rejected'
+    elif invocations:
+        status = 'complete'
+    elif len(summaries) == 1 and summaries[0].get('window_started') is False:
+        status = 'window_not_started'
+    else:
+        status = 'no_coverage'
     return dict(context_forwarding_status=status if observed else 'not_observed',
                 context_forwarding_errors=sorted(set(errors)),
                 context_forwarding_candidates=candidates if not errors else 0,

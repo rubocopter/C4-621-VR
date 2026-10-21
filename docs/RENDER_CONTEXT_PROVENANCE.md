@@ -433,6 +433,13 @@ después de Stop. Es estado del control thread, sin nuevas lecturas/contadores
 en el callback. Python exige bool y rechaza false con invocaciones publicadas.
 Los logs anteriores devuelven `context_forwarding_window_started:null`:
 desconocido, sin reinterpretarlo como false ni inferirlo de timestamps.
+Revisión host del analizador (21-10-2026): cuando no hay invocaciones,
+`window_started:true` da `no_coverage` (ventana abierta sin llamadas) y
+`window_started:false` da `window_not_started` (observación nunca abierta).
+Los logs anteriores sin ese campo mantienen `no_coverage` junto con
+`context_forwarding_window_started:null`; su apertura continúa desconocida.
+Este cambio solo afecta al informe Python: no altera la DLL v28 ni demuestra
+que el punto de entrada se ejecute en cada frame.
 
 Build aislado `out/context-forwarding-20261018/window/Release/`, DLL nueva
 `ac6_live_pair_probe_v28.dll`, SHA-256

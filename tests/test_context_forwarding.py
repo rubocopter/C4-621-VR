@@ -36,17 +36,27 @@ class ContextForwardingTests(unittest.TestCase):
     def test_old_logs_are_not_observed(self):
         self.assertEqual(analyze(fixture()).get('context_forwarding_status'), 'not_observed')
 
-    def test_empty_publication_is_no_coverage_even_when_capture_is_complete(self):
-        for opened in (True, False):
+    def test_empty_publication_distinguishes_open_window_from_not_started(self):
+        for opened, expected in ((True, 'no_coverage'), (False, 'window_not_started')):
             rows = [r for r in events() if r['phase'] not in ('render_context_invocation', 'projection_sample')]
             summary = next(r for r in rows if r['phase'] == 'render_context_summary')
             summary.update(samples=0, window_started=opened)
             next(r for r in rows if r['phase'] == 'projection_summary')['samples'] = 0
             result = analyze(rows)
             self.assertTrue(result['capture_provenance_complete'])
-            self.assertEqual(result.get('context_forwarding_status'), 'no_coverage')
+            self.assertEqual(result.get('context_forwarding_status'), expected)
             self.assertIs(result.get('context_forwarding_window_started'), opened)
             self.assertEqual(result['context_forwarding_candidates'], 0)
+
+    def test_legacy_empty_publication_without_window_state_remains_unknown(self):
+        rows = [r for r in events() if r['phase'] not in ('render_context_invocation', 'projection_sample')]
+        summary = next(r for r in rows if r['phase'] == 'render_context_summary')
+        summary['samples'] = 0
+        summary.pop('window_started', None)
+        next(r for r in rows if r['phase'] == 'projection_summary')['samples'] = 0
+        result = analyze(rows)
+        self.assertEqual(result['context_forwarding_status'], 'no_coverage')
+        self.assertIsNone(result['context_forwarding_window_started'])
 
     def test_window_telemetry_is_strict_and_cannot_contradict_a_published_invocation(self):
         for value in (False, 'true', 1, None):

@@ -1,4 +1,4 @@
-# Estado verificado — revisión documental 20-10-2026
+# Estado verificado — revisión documental y host 21-10-2026
 
 La última prueba física fue el 18-10-2026; los diagnósticos host y en juego
 posteriores de ese mismo día no constituyen una nueva aceptación en visor.
@@ -67,8 +67,8 @@ Condiciones, cifras y testimonios en [estéreo continuo](../LIVE_STEREO_FINDINGS
   binario ejecutado: orquestación simulada, sin nueva prueba física del
   lanzador incorporado después de PR #8.
 
-Última suite host del diagnóstico v28, repetida en esta revisión: **68 tests
-Python (67 correctos y una integración GPU opcional omitida)** y **8/8 CTests
+Última suite host del diagnóstico v28, repetida en esta revisión: **69 tests
+Python (68 correctos y una integración GPU opcional omitida)** y **8/8 CTests
 del productor diagnóstico**. En tandas anteriores también se registraron 14
 CTests live con GPU local, 5 CTests XR host y 37 casos del self-test GPU offline;
 no se han repetido aquí. Comandos y alcance en [BUILDING](../BUILDING.md),
@@ -124,13 +124,18 @@ ni las pruebas con GPU local**.
    v24 se rechazó antes de habilitar hooks por dos secciones PE `.text`.
    v26 corrige ese caso y completa captura con nueve hooks restaurados, pero
    cero invocaciones del contexto: interfaz hija no observada. v28, solo host,
-   registra apertura de ventana y clasifica la publicación vacía `no_coverage`.
+   registra apertura de ventana y clasifica una ventana abierta sin llamadas
+   como `no_coverage`. El analizador host posterior distingue la ausencia de
+   apertura con `window_not_started`; los registros antiguos conservan apertura
+   desconocida (`null`).
    **v28 está compilada y validada en host, sin carga en AC6**. Próxima prueba
    acotada: ocho segundos en misión offline confirmada, una sola carga de
    `ac6_live_pair_probe_v28.dll`, con `window_started:true`, procedencia
    válida y restauración de nueve hooks. Si hay candidatos de forwarding,
-   inspeccionar el destino registrado; si no los hay, conservar `no_coverage`
-   e investigar la cobertura del punto de entrada, sin atribuirle una matriz.
+   inspeccionar el destino registrado; si no los hay y la ventana se abrió,
+   conservar `no_coverage` e investigar la cobertura del punto de entrada.
+   Un resultado `window_not_started` exige investigar primero por qué no se
+   abrió la ventana. Ninguno de esos estados permite atribuir una matriz.
    Protocolo, condiciones y evidencia en
    [diagnóstico de contexto](RENDER_CONTEXT_PROVENANCE.md#única-observación-mínima-pendiente).
 2. **Geometría del visor y escala:** integrar poses/FOV por ojo, establecer
