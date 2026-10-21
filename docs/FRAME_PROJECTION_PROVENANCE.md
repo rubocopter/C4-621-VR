@@ -243,8 +243,11 @@ Antes de transportar proyección hará falta ese testigo GPU y rechazo de
 ambigüedad/múltiples vistas por recurso; esta sesión no inventa ese testigo.
 
 Continuación desde los callsites de v18: [paquete de matrices y scope del
-contexto de render](RENDER_CONTEXT_PROVENANCE.md), probado en host y todavía
-sin una nueva ejecución en el juego.
+contexto de render](RENDER_CONTEXT_PROVENANCE.md). Posteriormente se ejecutaron
+en AC6 las observaciones v20, v22 y v26 (v24 fue rechazada antes de activar
+hooks); v28 está probada únicamente en host. Esas pruebas acotaron la identidad
+del scope CPU, pero siguen sin demostrar el binding de la matriz por frame.
+El siguiente ensayo concreto y su estado están en ese documento.
 
 ## Repetición host
 

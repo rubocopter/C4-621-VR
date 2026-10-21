@@ -356,3 +356,36 @@ La primera persona ya está probada por el usuario y Depth of Field ya está des
   contra aceptación privada, 153 enlaces locales/anclas correctos y sintaxis
   del ejemplo PowerShell sin ejecutarlo (0 errores). Revisión independiente
   sin hallazgos y diff correcto.
+
+## 2026-10-18 — procedencia de proyección, scope CPU y forwarding (v17–v28)
+
+- Se añadió diagnóstico opcional de procedencia por envío/lista/grabación,
+  muestras del helper de proyección y análisis de correspondencia con el par
+  publicado. La pasada v17 fue rechazada por traza truncada; v18 cerró la
+  ventana al primer backpressure: tres pares con procedencia completa, pero
+  ninguna matriz ligada a los draws que escribieron su profundidad.
+- El seguimiento de la entrega CPU de matrices identificó en v20 el adaptador
+  y sus métodos candidatos, pero esa sesión terminó ante una segunda cola.
+  v22 obtuvo 128 muestras dentro de 64 scopes CPU y tres pares completos;
+  sigue faltando observar la versión/binding real de GPU.
+- Se preparó lectura guardada de la interfaz hija al entrar en el adaptador.
+  v24 rechazó correctamente el fingerprint antes de activar hooks; v26
+  corrigió esa comprobación, capturó tres pares y restauró nueve hooks, aunque
+  no observó ninguna invocación del contexto. La causa de cobertura cero
+  sigue abierta; tampoco se ha aislado la segunda cola de sesiones anteriores.
+- Host v28 distingue publicaciones vacías (`no_coverage`) y registra si se
+  abrió la ventana de observación. Binario aislado construido y no cargado
+  en AC6; SHA-256 y procedimiento en
+  `docs/RENDER_CONTEXT_PROVENANCE.md`. La siguiente prueba es una sola ventana
+  offline de ocho segundos con v28, conservando evidencia tanto si aparece
+  el forwarding como si continúa sin cobertura. No hubo nueva prueba PSVR2.
+
+## 2026-10-20 — revisión de estado y siguientes pasos
+
+- Se cotejó `main` (`6c65dac`) con documentos, evidencias privadas v26 y
+  binario v28, sin cargar sondas ni ejecutar el juego. Se actualizan resumen,
+  hoja de ruta, índice y guía de compilación para señalar el gate v28 y
+  distinguirlo de la última aceptación en PSVR2 (PR #8).
+- Repetición host: 68 tests Python (67 correctos, 1 integración GPU opcional
+  omitida) y 8/8 CTests del diagnóstico v28. La traza in-game v28 y la
+  asociación de matrices por frame continúan pendientes.
