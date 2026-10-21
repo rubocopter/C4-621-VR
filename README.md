@@ -97,6 +97,8 @@ A conventional game render becomes two depth-derived views, displayed in a separ
 
 PS VR2 Sense input is **not implemented**. The current experiments use a conventional controller for game input. The 3DoF proof of concept should not be mistaken for room-scale tracking or a finished mech cockpit.
 
+**Next engineering check (host/in-game diagnostic, not a headset test):** an isolated eight-second run of the already built **v28 context-forwarding observer** to establish whether the target CPU context is reached and whether its forwarded interface can be identified. This is a prerequisite investigation for matching the real per-frame projection to captured depth; no GPU binding has been demonstrated. See [verified status](docs/STATUS.md) and [the diagnostic evidence and next test](docs/RENDER_CONTEXT_PROVENANCE.md#única-observación-mínima-pendiente).
+
 ## Technical documentation
 
 Want to inspect the actual engineering rather than just the project overview?

@@ -6,6 +6,8 @@ This is the documentation entry point for **C4-621 VR**, an experimental Armored
 
 > **Current reference (18 October 2026):** The latest bounded PSVR2 regression (PR #8, now in `main`) was accepted at **2560×1440 per eye / 90°**: live fusible depth, no doubled image or observed freezes, and correct head turning between a near edge and distant background. This does not establish metric geometry, latency or prolonged comfort. Start with [verified status](STATUS.md); earlier reports retain historical results.
 
+Documentation reviewed on **20 October 2026**. The latest engineering work is the **host-verified v28 context-forwarding diagnostic**, awaiting its first bounded in-game run; it has not been accepted in PSVR2. See [current status](STATUS.md) and [the single next observation](RENDER_CONTEXT_PROVENANCE.md#única-observación-mínima-pendiente).
+
 ## Choose a reading path
 
 | Your question | Read these first |
@@ -21,7 +23,7 @@ This is the documentation entry point for **C4-621 VR**, an experimental Armored
 | *How do CPU and GPU choose the nearest depth sample?* | [Depth ownership, numerical limits and regression fixtures](DEPTH_REFERENCE_PRECISION.md) |
 | *How is head movement connected to the game?* | [Camera discovery](../CAMERA_FINDINGS.md) → [current combined stereo procedure](VR_TRIAL_RUNBOOK.md); [initial display history](../VR_DISPLAY_FINDINGS.md) |
 | *Can I build and test it?* | [Reproducible Windows build](../BUILDING.md) → [CI workflow](../.github/workflows/ci.yml) → [native test sources](../native/) |
-| *What should be implemented next?* | [Roadmap and validation gates](../MODDING_PLAN.md) → [quality/pacing limits](../QUALITY_PACING_FINDINGS.md) |
+| *What is the next concrete test and subsequent work?* | [v28 context diagnostic and acceptance conditions](RENDER_CONTEXT_PROVENANCE.md#única-observación-mínima-pendiente) → [roadmap and validation gates](../MODDING_PLAN.md) → [quality/pacing limits](../QUALITY_PACING_FINDINGS.md) |
 | *Where did an assumption or failure originate?* | [Research chronology](../MODLOG.md) and individual findings documents |
 
 ## Architecture at a glance

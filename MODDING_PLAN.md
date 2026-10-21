@@ -1,4 +1,4 @@
-# Hoja de ruta VR — 18-10-2026
+# Hoja de ruta VR — revisada 20-10-2026
 
 Objetivo: avanzar hacia estereoscopía geométricamente correcta y estable en
 PSVR2/OpenXR, preservando el prototipo que funciona. El
@@ -18,6 +18,16 @@ geométricos ni comodidad prolongada.
 `main` contiene PR #4–#9 y la selección explícita de consumidor. Los nombres
 de ramas, PID, instalación y configuración de mods de las primeras
 inspecciones son históricos: no acreditan el entorno de una sesión nueva.
+
+**Próximo paso concreto:** ejecutar una única observación offline de ocho
+segundos con la sonda diagnóstica **v28**, ya compilada y probada en host,
+todavía no cargada en AC6. Debe confirmar que abrió la ventana de observación
+(`window_started:true`), si se invocó el contexto y si se pudo registrar el
+forwarding virtual de la interfaz hija. Conservar resultados incluso si la
+cobertura es cero; ello orientará el siguiente análisis sin fabricar una
+asociación entre matriz y frame. El alcance, preparación y criterios de parada
+figuran en [procedencia del contexto](docs/RENDER_CONTEXT_PROVENANCE.md#única-observación-mínima-pendiente).
+Esta prueba no requiere PSVR2 y no cambia el gate de proyección por fotograma.
 
 ## Orden de trabajo pendiente
 

@@ -56,11 +56,13 @@ The full `live_stereo` CTest suite additionally exercises four explicit syntheti
 projection models on hardware D3D12 in separate processes. It does not open AC6,
 SteamVR or OpenXR. See [projection evidence](PROJECTION_FINDINGS.md#contrato-de-proyección-verificable-en-host--18-10-2026).
 
-## Testing inside the headset
+## Bounded diagnostics and headset testing
 
-For the default-OFF, eight-second projection/provenance diagnostic and its
-CPU/GPU fixtures, see [frame provenance](docs/FRAME_PROJECTION_PROVENANCE.md).
-It does not enable per-frame projection or require a headset.
+For the opt-in, eight-second projection/provenance diagnostic and its CPU/GPU
+fixtures, see [frame provenance](docs/FRAME_PROJECTION_PROVENANCE.md). The
+current v28 continuation and its in-game prerequisites are documented in
+[context provenance](docs/RENDER_CONTEXT_PROVENANCE.md#única-observación-mínima-pendiente).
+These diagnostics do not enable per-frame projection or require a headset.
 
 Read the [verified status](docs/STATUS.md) and follow the [current isolated stereo procedure](docs/VR_TRIAL_RUNBOOK.md). Historical conditions and measurements remain in [LIVE_STEREO_FINDINGS.md](LIVE_STEREO_FINDINGS.md) and [QUALITY_PACING_FINDINGS.md](QUALITY_PACING_FINDINGS.md). The verified 18 October 2026 reference trial explicitly used `--eye-width 2560 --eye-height 1440 --rotation-limit-deg 90 --headtracking`. The program defaults remain 1280×720 and 25°.
 

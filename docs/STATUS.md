@@ -1,4 +1,7 @@
-# Estado verificado — 18-10-2026
+# Estado verificado — revisión documental 20-10-2026
+
+La última prueba física fue el 18-10-2026; los diagnósticos host y en juego
+posteriores de ese mismo día no constituyen una nueva aceptación en visor.
 
 Referencia vigente de validación. Los informes conservan el historial de
 ensayos; sus pasos antiguos no son el procedimiento actual. Para repetir una
@@ -64,15 +67,17 @@ Condiciones, cifras y testimonios en [estéreo continuo](../LIVE_STEREO_FINDINGS
   binario ejecutado: orquestación simulada, sin nueva prueba física del
   lanzador incorporado después de PR #8.
 
-Últimos resultados registrados antes de esta limpieza: 44 pruebas Python
-correctas y una integración GPU opcional omitida explícitamente; 14 CTests
-live con GPU local, 5 CTests XR host y 37 casos del self-test GPU offline en
-sus tandas respectivas. No se han repetido para esta edición documental.
-Comandos y alcance en [BUILDING](../BUILDING.md) y
-[precisión de referencias](DEPTH_REFERENCE_PRECISION.md).
-La CI de `665bfa9` (`39131342592`) compiló nueve componentes y ejecutó los
-tests configurados sin visor; **CI no ejecuta la validación física ni las
-pruebas con GPU local**.
+Última suite host del diagnóstico v28, repetida en esta revisión: **68 tests
+Python (67 correctos y una integración GPU opcional omitida)** y **8/8 CTests
+del productor diagnóstico**. En tandas anteriores también se registraron 14
+CTests live con GPU local, 5 CTests XR host y 37 casos del self-test GPU offline;
+no se han repetido aquí. Comandos y alcance en [BUILDING](../BUILDING.md),
+[precisión de referencias](DEPTH_REFERENCE_PRECISION.md) y
+[diagnóstico de contexto](RENDER_CONTEXT_PROVENANCE.md).
+La CI anteriormente registrada para `665bfa9` (`39131342592`) compiló nueve
+componentes y ejecutó sus tests configurados sin visor; ese resultado no es
+una ejecución de la suite posterior v28. **CI no ejecuta la validación física
+ni las pruebas con GPU local**.
 
 ## Contrato y límites actuales
 
@@ -120,6 +125,14 @@ pruebas con GPU local**.
    v26 corrige ese caso y completa captura con nueve hooks restaurados, pero
    cero invocaciones del contexto: interfaz hija no observada. v28, solo host,
    registra apertura de ventana y clasifica la publicación vacía `no_coverage`.
+   **v28 está compilada y validada en host, sin carga en AC6**. Próxima prueba
+   acotada: ocho segundos en misión offline confirmada, una sola carga de
+   `ac6_live_pair_probe_v28.dll`, con `window_started:true`, procedencia
+   válida y restauración de nueve hooks. Si hay candidatos de forwarding,
+   inspeccionar el destino registrado; si no los hay, conservar `no_coverage`
+   e investigar la cobertura del punto de entrada, sin atribuirle una matriz.
+   Protocolo, condiciones y evidencia en
+   [diagnóstico de contexto](RENDER_CONTEXT_PROVENANCE.md#única-observación-mínima-pendiente).
 2. **Geometría del visor y escala:** integrar poses/FOV por ojo, establecer
    unidades/IPD y presentación adecuada; validar físicamente antes de cambiar
    la ruta por defecto. La preparación host no acredita esas capacidades.
