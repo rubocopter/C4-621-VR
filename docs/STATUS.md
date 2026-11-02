@@ -1,7 +1,51 @@
-# Estado verificado — revisión documental y host 21-10-2026
+# Estado verificado — revisión 01-11-2026
 
-La última prueba física fue el 18-10-2026; los diagnósticos host y en juego
-posteriores de ese mismo día no constituyen una nueva aceptación en visor.
+**Avance del 01-11:** localizada en el propio AC6 la lista/fábrica de vistas
+de escena, con 36 instrucciones y 9 slots verificados. Un observador externo
+de solo lectura obtuvo 31/31 muestras coherentes de vista/cámara/escena en el
+garaje offline y otras 31/31 en PRUEBA DE AC individual. Los targets cambiaron
+durante esa transición. Una sonda posterior registró cuatro recorridos nativos
+completos, cada uno con su render de vista principal; ocho eventos sin pérdidas,
+ambos hooks restaurados y postflight externo coherente. El
+[informe de vistas nativas](NATIVE_VIEW_ROUTE.md) distingue estas llamadas CPU
+de render por ojo o asociación GPU, aún no demostrados.
+Se implementó además un [contrato DLSS por ojo](../native/dlss_contract/README.md)
+con ocho grupos de tests host, sin NGX ni activación en presentación.
+La aceptación física de PSVR2 sigue siendo la del 18-10.
+
+**Recursos, continuación del 01-11:** otras 41 anclas verificadas y censo externo
+de 31/31 muestras en garaje y 31/31 en prueba individual. Color/depth principales
+coinciden con salidas globales; target-set, velocidad y depth interno cambian
+entre escenas. Localizado acquire/release del estado por vista mediante pool.
+Ver [ownership de recursos](NATIVE_VIEW_RESOURCES.md): no se ha creado otra
+vista ni probado independencia o asociación GPU. Capturados además los
+parámetros de una creación natural de la fábrica: una llamada completa,
+hook restaurado y resultado coincidente con el holder en 21 muestras externas
+posteriores, ligadas a la misma instancia y ordenadas mediante tick monotónico.
+El descriptor incluye una dependencia al owner que requiere resolver su vida.
+
+**Continuación solo estática del 01-11:** el análisis del PE identificó el
+constructor y las dos tablas virtuales de `owner+0x6d8`, cuatro stores de ese
+puntero en auxiliares de fábrica y el orden de desmontaje: desregistro y
+liberación de la vista antes del destructor del subobjeto. Ver
+[dependencia y límites](NATIVE_VIEW_RESOURCES.md#continuación-estrictamente-offline-vida-del-descriptor-0x68).
+Los 23 controles de instrucción y diez slots adicionales verifican el binario
+concreto. Sigue pendiente acreditar que no quedan callbacks que utilicen el
+puntero tras destruir el owner. **No se abrió el juego** en esta continuación.
+
+Una segunda revisión estática siguió cinco inserciones de auxiliares en la
+vista y el bucle que decrementa sus referencias y destruye los wrappers sin
+otros propietarios. Son **23/23** anclas y **5/5** slots de destructores
+adicionales verificados; se identificó también la ruta destructor → allocator
+para dos referencias internas por wrapper. La destrucción de la vista desde el owner
+es condicional al refcount: el riesgo de callbacks
+externos o wrappers retenidos continúa abierto. La batería offline de Python
+terminó con **138 tests (137 correctos, uno GPU opcional omitido)**; pasaron
+también **29/29 CTests host** (DLSS 8, vista 10, fábrica 10 y constantes 1).
+
+La última aceptación en visor fue el 18-10-2026. Los diagnósticos v28 y de
+constantes nativas del 21-10-2026 se ejecutaron sin visor y no amplían esa
+aceptación. El segundo fue automático, con el usuario ausente.
 
 Referencia vigente de validación. Los informes conservan el historial de
 ensayos; sus pasos antiguos no son el procedimiento actual. Para repetir una
@@ -123,21 +167,28 @@ ni las pruebas con GPU local**.
    El siguiente forwarding virtual y su uso por GPU siguen sin observarse;
    v24 se rechazó antes de habilitar hooks por dos secciones PE `.text`.
    v26 corrige ese caso y completa captura con nueve hooks restaurados, pero
-   cero invocaciones del contexto: interfaz hija no observada. v28, solo host,
-   registra apertura de ventana y clasifica una ventana abierta sin llamadas
+   cero invocaciones del contexto: interfaz hija no observada. v28 añadió
+   registro de apertura y clasificación de una ventana abierta sin llamadas
    como `no_coverage`. El analizador host posterior distingue la ausencia de
    apertura con `window_not_started`; los registros antiguos conservan apertura
    desconocida (`null`).
-   **v28 está compilada y validada en host, sin carga en AC6**. Próxima prueba
-   acotada: ocho segundos en misión offline confirmada, una sola carga de
-   `ac6_live_pair_probe_v28.dll`, con `window_started:true`, procedencia
-   válida y restauración de nueve hooks. Si hay candidatos de forwarding,
-   inspeccionar el destino registrado; si no los hay y la ventana se abrió,
-   conservar `no_coverage` e investigar la cobertura del punto de entrada.
-   Un resultado `window_not_started` exige investigar primero por qué no se
-   abrió la ventana. Ninguno de esos estados permite atribuir una matriz.
-   Protocolo, condiciones y evidencia en
-   [diagnóstico de contexto](RENDER_CONTEXT_PROVENANCE.md#única-observación-mínima-pendiente).
+   **v28 ejecutada una vez el 21-10-2026 / PID 21860**, ocho segundos en
+   misión offline confirmada: `window_started:true`, 3 pares, 146 listas,
+   procedencia válida, una cola y nueve hooks restaurados; juego respondiendo.
+   Cero invocaciones del contexto, cero candidatos de forwarding y 145020
+   llamadas al helper sin token: `no_coverage`, sin asociación de matriz.
+   La continuación ya encontró una [ruta nativa de upload y dibujo](NATIVE_RENDER_ROUTE.md)
+   y resolvió fábrica/vtable/slot8 para el tipo 0x25f mediante metadata y
+   análisis estático. También resolvió creación de CBV y tablas raíz. Una
+   prueba automática observó 4096 copias byte a byte y 604 asociaciones
+   candidatas; el overflow impide aceptar su ventana como completa. Los cinco
+   hooks quedaron restaurados, comprobados mediante lectura independiente.
+   El [código y analizador](../native/native_constants_trace/README.md) quedan
+   separados de producción; el cierre temprano posterior pasa 1 CTest y
+   9 tests Python, sin nueva carga en esta partida. Falta enlazar versiones,
+   generación de command list y submission con el depth capturado. La
+   cobertura v28 queda como secundaria. No repetir v28 ni sobrescribir la DLL
+   retenida inactiva. [Resultado y evidencia](RENDER_CONTEXT_PROVENANCE.md#observación-presencial-v28--pid-21860).
 2. **Geometría del visor y escala:** integrar poses/FOV por ojo, establecer
    unidades/IPD y presentación adecuada; validar físicamente antes de cambiar
    la ruta por defecto. La preparación host no acredita esas capacidades.

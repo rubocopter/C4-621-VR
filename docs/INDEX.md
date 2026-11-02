@@ -6,9 +6,31 @@ This is the documentation entry point for **C4-621 VR**, an experimental Armored
 
 > **Current reference (18 October 2026):** The latest bounded PSVR2 regression (PR #8, now in `main`) was accepted at **2560×1440 per eye / 90°**: live fusible depth, no doubled image or observed freezes, and correct head turning between a near edge and distant background. This does not establish metric geometry, latency or prolonged comfort. Start with [verified status](STATUS.md); earlier reports retain historical results.
 
-Documentation reviewed on **20 October 2026**. The latest engineering work is the **host-verified v28 context-forwarding diagnostic**, awaiting its first bounded in-game run; it has not been accepted in PSVR2. See [current status](STATUS.md) and [the single next observation](RENDER_CONTEXT_PROVENANCE.md#única-observación-mínima-pendiente).
+Documentation reviewed on **21 October 2026**. The bounded **v28 in-game diagnostic** completed with a confirmed open window and valid capture provenance, but zero context invocations (`no_coverage`). Nine hooks were restored; this was not a PSVR2 trial. See [current status](STATUS.md) and [results and next investigation](RENDER_CONTEXT_PROVENANCE.md#observación-presencial-v28--pid-21860).
+
+The subsequent [native render-route investigation](NATIVE_RENDER_ROUTE.md) resolved upload, CBV creation and root-table consumption. One unattended trace produced 604 candidate associations but capacity loss prevents a complete recording claim. The [standalone implementation](../native/native_constants_trace/README.md) includes host-tested early closure and an offline analyzer. Captured-depth identity and GPU versions remain open; repeating v28 is not required.
 
 ## Choose a reading path
+
+**2 November AC6 static continuation:** [render context, owner prepass and frame-boundary census](NATIVE_FRAME_BOUNDARY.md)
+checks 66 fingerprinted instructions around the native renderer, conditional
+target-parameter copies, shared four-slot state and global auxiliary dispatch.
+It establishes no replay-safe boundary or second-eye render;
+no game or headset was opened.
+
+**2 November source-reference update:** [Elden Ring VR native second pass](ELDEN_RING_VR_REFERENCE.md)
+details camera finalization, selective task replay, simulation-side effects,
+GPU resource hazards and eye/Present pairing. These are design constraints to
+verify in AC6; no new headset or game test was performed.
+
+**1 November engineering update:** [AC6 native-view route and read-only census](NATIVE_VIEW_ROUTE.md)
+and [per-eye DLSS admission/history contract](../native/dlss_contract/README.md).
+The subsequent [resource ownership census](NATIVE_VIEW_RESOURCES.md) identifies
+shared primary outputs, named velocity/depth references and pooled view state.
+An offline-only continuation in that report maps the embedded factory dependency,
+its vtables, conditional view/auxiliary teardown sequence and retained-reference
+risk; external callback lifetime is still open.
+These extend research/host preparation; the headset acceptance above is unchanged.
 
 | Your question | Read these first |
 | --- | --- |
@@ -23,7 +45,13 @@ Documentation reviewed on **20 October 2026**. The latest engineering work is th
 | *How do CPU and GPU choose the nearest depth sample?* | [Depth ownership, numerical limits and regression fixtures](DEPTH_REFERENCE_PRECISION.md) |
 | *How is head movement connected to the game?* | [Camera discovery](../CAMERA_FINDINGS.md) → [current combined stereo procedure](VR_TRIAL_RUNBOOK.md); [initial display history](../VR_DISPLAY_FINDINGS.md) |
 | *Can I build and test it?* | [Reproducible Windows build](../BUILDING.md) → [CI workflow](../.github/workflows/ci.yml) → [native test sources](../native/) |
-| *What is the next concrete test and subsequent work?* | [v28 context diagnostic and acceptance conditions](RENDER_CONTEXT_PROVENANCE.md#única-observación-mínima-pendiente) → [roadmap and validation gates](../MODDING_PLAN.md) → [quality/pacing limits](../QUALITY_PACING_FINDINGS.md) |
+| *What is the next concrete investigation and subsequent work?* | [Native uploads, descriptor consumption and draw route](NATIVE_RENDER_ROUTE.md) → [roadmap and validation gates](../MODDING_PLAN.md) → [quality/pacing limits](../QUALITY_PACING_FINDINGS.md) |
+| *Which other VR projects suggest a way past the matrix/GPU blocker?* | [External VR techniques: D3D12 constant provenance and native per-eye rendering](EXTERNAL_VR_TECHNIQUES.md) |
+| *What can the new Dark Souls 3 VR mod contribute?* | [DS3-VR: camera constants, OpenXR projection and HUD; D3D11/geo-11 limits](DS3_VR_REFERENCE.md) |
+| *How do native engine stereo and geo-11 stereo compare for AC6 research?* | [Two DS3 VR approaches: engine view list, asymmetric lenses, shared targets and remaining evidence gaps](DS3_NATIVE_STEREO_REFERENCE.md) |
+| *Has that native-view pattern been found in AC6 itself?* | [Verified scene-view factory/list route, ownership and read-only observation](NATIVE_VIEW_ROUTE.md) |
+| *Can AC6's native renderer safely render a second eye in the same frame?* | [Frame context, owner prepass and conditional renderer-state changes](NATIVE_FRAME_BOUNDARY.md) |
+| *How have those techniques been applied to AC6 itself?* | [Native shader registry, matrix upload, D3D12 bindings and draw route](NATIVE_RENDER_ROUTE.md) |
 | *Where did an assumption or failure originate?* | [Research chronology](../MODLOG.md) and individual findings documents |
 
 ## Architecture at a glance

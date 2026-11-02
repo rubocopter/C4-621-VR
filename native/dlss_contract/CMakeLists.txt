@@ -1,0 +1,18 @@
+cmake_minimum_required(VERSION 3.20)
+project(ac6_dlss_contract LANGUAGES CXX)
+
+add_library(dlss_contract INTERFACE)
+target_compile_features(dlss_contract INTERFACE cxx_std_17)
+target_include_directories(dlss_contract INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}")
+
+enable_testing()
+add_executable(test_contract test_contract.cpp)
+target_link_libraries(test_contract PRIVATE dlss_contract)
+if(MSVC)
+  target_compile_options(test_contract PRIVATE /W4 /EHsc /fp:strict)
+else()
+  target_compile_options(test_contract PRIVATE -Wall -Wextra -Wpedantic -fno-fast-math)
+endif()
+foreach(case admission association jitter depth_motion nonfinite transaction tickets reset)
+  add_test(NAME dlss_contract_${case} COMMAND test_contract ${case})
+endforeach()

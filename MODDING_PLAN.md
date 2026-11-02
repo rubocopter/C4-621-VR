@@ -1,4 +1,4 @@
-# Hoja de ruta VR — revisada 20-10-2026
+# Hoja de ruta VR — revisada 01-11-2026
 
 Objetivo: avanzar hacia estereoscopía geométricamente correcta y estable en
 PSVR2/OpenXR, preservando el prototipo que funciona. El
@@ -19,24 +19,66 @@ geométricos ni comodidad prolongada.
 de ramas, PID, instalación y configuración de mods de las primeras
 inspecciones son históricos: no acreditan el entorno de una sesión nueva.
 
-**Próximo paso concreto:** ejecutar una única observación offline de ocho
-segundos con la sonda diagnóstica **v28**, ya compilada y probada en host,
-todavía no cargada en AC6. Debe confirmar que abrió la ventana de observación
-(`window_started:true`), si se invocó el contexto y si se pudo registrar el
-forwarding virtual de la interfaz hija. Conservar resultados incluso si la
-cobertura es cero; ello orientará el siguiente análisis sin fabricar una
-asociación entre matriz y frame. El alcance, preparación y criterios de parada
-figuran en [procedencia del contexto](docs/RENDER_CONTEXT_PROVENANCE.md#única-observación-mínima-pendiente).
-Esta prueba no requiere PSVR2 y no cambia el gate de proyección por fotograma.
+**Próximo paso concreto:** completar el análisis de callbacks auxiliares y
+su liberación en la dependencia `descriptor+0x68` → `owner+0x6d8` antes de
+construir una segunda vista de control sin diferencia. La
+[continuación offline](docs/NATIVE_VIEW_RESOURCES.md#continuación-estrictamente-offline-vida-del-descriptor-0x68)
+verificó constructor, dos tablas virtuales, cuatro stores de la referencia,
+cinco inserciones de wrappers y la limpieza condicional de su lista al destruir
+la vista. Queda demostrar que los callbacks pendientes no sobreviven al
+desmontaje: el owner solo destruye la vista si agota su refcount; también
+pueden existir wrappers retenidos externamente. Ya se capturaron
+los parámetros de una creación natural y se contrastó el resultado con 21
+muestras posteriores.
+El [censo de recursos](docs/NATIVE_VIEW_RESOURCES.md) confirmó que color/depth
+principales apuntan a las salidas globales, mientras cambian targets y recursos
+auxiliares entre escenas. Hay que decidir salidas propias o copia por ojo antes
+de sobrescribir, con vida/barreras GPU e historiales resueltos. La
+[ruta nativa](docs/NATIVE_VIEW_ROUTE.md) ya tiene cuatro recorridos CPU
+observados con restauración. En paralelo, conservar la
+[procedencia de constantes](docs/NATIVE_RENDER_ROUTE.md) como requisito para
+certificar los datos usados por GPU. El puente de descriptores ya se resolvió;
+faltan versiones efectivas y vínculo al depth. No repetir cobertura CPU v28.
+
+Comparación del código de otros cinco proyectos VR y dos vías técnicas
+posteriores — vincular constantes al draw GPU o encontrar un render de escena
+reentrante — en [investigación externa del 21-10-2026](docs/EXTERNAL_VR_TECHNIQUES.md).
+La [inspección de Elden Ring VR del 02-11-2026](docs/ELDEN_RING_VR_REFERENCE.md)
+añade condiciones verificables: cierre de tareas de simulación, propagación de
+cámara tras su finalizador, dos `Present` identificables, protección de
+transiciones y vida de recursos GPU. Antes de duplicar el render de AC6,
+identificar estáticamente la frontera de frame y sus efectos laterales.
+Ambas siguen en fase de investigación; la [comparación de DS3 VR](docs/DS3_NATIVE_STEREO_REFERENCE.md)
+ya ha orientado la ruta nativa AC6. No volver al ciclo de una sonda presencial
+por cada salto CPU.
+
+La [inspección offline de contexto/render](docs/NATIVE_FRAME_BOUNDARY.md)
+verifica 66 sitios del PE identificado. Además de las escrituras de estado,
+el prepaso puede sobrescribir un bloque de parámetros del target, modificar
+cuatro slots de estado y consultar flags globales. Hay un despacho auxiliar
+condicional que usa otro objeto global. Es necesario aclarar ownership y
+secuenciación antes de repetirlo; el vínculo entre llamadas y frame y la
+seguridad de un segundo ojo **siguen pendientes**.
+
+La [continuación nativa](docs/NATIVE_RENDER_ROUTE.md) ya resuelve el puente de
+CBV y el layout de tablas. Un ensayo automático único produjo 604 asociaciones
+candidatas; la pérdida por capacidad mantiene cerrada la aceptación de esa
+ventana. El [observador y analizador](native/native_constants_trace/README.md)
+son código separado y comprobable. La fuente posterior cierra una muestra
+breve en vez de agotar ocho segundos de buffers; solo está validada en host.
+Siguiente tramo: versiones de command list/constantes y vínculo al depth real,
+sin volver a investigar cobertura CPU v28 como requisito.
 
 ## Orden de trabajo pendiente
 
 | Puerta | Evidencia necesaria para superarla |
 | --- | --- |
+| **Vista nativa por ojo** | Lista/fábrica y recorrido CPU observados; falta resolver recursos de cámara/targets/historias y misma simulación, después un control sin diferencia y dos vistas con salidas identificadas. |
 | **Proyección y fotograma** | Identificar matriz/cámara/viewport/jitter del envío color/depth real, sin generalizar una captura. Probar identidad temporal antes de transportar metadata versionada. |
 | **Escala y ojos del visor** | Establecer unidades/IPD y usar poses/FOV por ojo en una presentación adecuada. El contrato opcional probado CPU/GPU es preparación host, desactivada en presentación. |
 | **Oclusiones y HUD** | Evaluar bordes, huecos, elementos cercanos y HUD; la captura única no contiene superficies ocultas. |
 | **Continuidad y comodidad** | Tiempos GPU y latencia medidos, comparaciones repetidas con una variable, después combate/boost/lock-on/transiciones y mayor duración. |
+| **DLSS por ojo** | Contrato host implementado; falta adapter NGX/D3D12 con color/depth/movimiento/jitter coherentes, historia por ojo y beneficio GPU/visual medido. No está activo en VR. |
 | **Capacidades posteriores** | Valorar posición 6DoF, recentrado durante uso, cockpit y Sense después de resolver la base; no son capacidades jugables implementadas/validadas. |
 
 La siguiente mejora de código debe resolver una limitación concreta mediante

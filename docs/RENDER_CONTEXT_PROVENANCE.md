@@ -7,6 +7,16 @@ proceso, verificó 128 muestras con identidad de scope CPU y la procedencia de
 tres pares; sigue sin demostrar binding GPU ni proyección por par. Ambas
 pasadas se registran debajo. No se ha probado presentación en PSVR2.
 
+**Actualización 21-10-2026:** v28 ya se ejecutó una vez en PID 21860, con
+misión offline confirmada. Abrió su ventana (`window_started:true`), capturó
+tres pares válidos y restauró nueve hooks, pero registró cero invocaciones:
+`no_coverage`. Ver [resultado y siguiente investigación](#observación-presencial-v28--pid-21860).
+
+**Cambio de prioridad posterior:** la [investigación del renderer nativo](NATIVE_RENDER_ROUTE.md)
+resolvió una fábrica/slot8 por tipo y siguió un bloque de matriz hasta el
+uploader real sin otra sonda. Investigar la cobertura v28 ya no es el
+requisito previo para continuar; se prioriza el consumidor GPU.
+
 ## Ruta localizada con los callsites de v18
 
 Binario SHA-256 `e003771e5548bca91882c1d7dfe2df3de97cee05c2c989d0c0e34b036ea610d6`.
@@ -373,6 +383,10 @@ creación/desactivación ni relaja la comprobación conservadora de restauració
 
 ### Única observación mínima pendiente
 
+**Procedimiento completado el 21-10-2026 con v28 / PID 21860.** Se conserva
+este apartado como procedimiento histórico y para mantener sus enlaces.
+No repetir v28; el resultado y el siguiente paso se registran al final.
+
 Tras comprobación actual de presencia y misión cooperativa offline: una
 ventana de ocho segundos con v28, sin visor/consumidor/seguimiento. v26 terminó
 normalmente, por lo que su PID puede reutilizarse si identidad,
@@ -448,8 +462,59 @@ Build aislado `out/context-forwarding-20261018/window/Release/`, DLL nueva
 una integración GPU opcional omitida. La revisión independiente no encontró
 problemas. Las DLLs v24/v26 mapeadas se conservan intactas.
 
-La única próxima observación es la descrita arriba con v28, en otra ventana
+Al preparar v28, la única próxima observación era la descrita arriba, en otra ventana
 presencial, sin repetir v26. Además de las condiciones de éxito anteriores,
 debe registrar `window_started:true`. Si no hay invocaciones, conservar
 `no_coverage`: una ventana abierta y vacía permitirá acotar la investigación
 a la ejecución/cobertura del punto, sin seleccionar otra matriz por cercanía.
+
+## Observación presencial v28 — PID 21860
+
+El 21-10-2026 el usuario comunicó que estaba en partida y confirmó:
+«Sí, misión offline; adelante con v28». Se ejecutó una sola carga del binario
+host ya identificado, sin visor, consumidor, seguimiento ni screenshots.
+No se inició SteamVR. El loader verificó de nuevo ejecutable/hash, módulo
+cooperativo, ausencia de EAC conocido, prólogo y DLL no mapeada; salió con 0.
+
+| Observación | Resultado |
+| --- | --- |
+| Captura | 3 pares, 716 descartes por backpressure; una cola DIRECT, sin fallo ni ledger inseguro |
+| Traza | 146 listas, cierre en envío 111; cero overflow/pares omitidos, procedencia de captura completa |
+| Ventana de contexto | `window_started:true`, cero llamadas/invocaciones, inválidos, overflow o slots incompletos |
+| Helper | Cero muestras dentro del contexto; 145020 llamadas sin token omitidas |
+| Forwarding | `no_coverage`, cero candidatos y cero rechazos; dispatch y binding GPU no observados |
+| Cierre | Nueve hooks restaurados según la comprobación nativa; loader confirma desactivación y prólogo de cámara restaurado; DLL retenida inactiva |
+
+Comprobación posterior independiente, con handle de solo lectura: los primeros
+16 bytes de cámara (`0x6bfe50`), helper (`0x23a7790`) y contexto
+(`0x26e17f0`) coinciden con los prólogos esperados. El proceso seguía
+respondiendo al consultarlo. No se cargó otra sonda ni se descargó v28.
+Esto comprueba cierre técnico; no es una nueva aceptación visual/PSVR2.
+
+La apertura de ventana queda demostrada en esta pasada. **No explica aún
+por qué el punto no recibió llamadas admitidas.** Las llamadas al helper
+sin token prueban actividad de esa ruta, sin vincularla a los tres pares ni
+probar cobertura del contexto. El analizador mantiene
+`frame_associated:false` / `missing_raster_binding`; `cpu_context_scope_complete`
+solo indica publicación íntegra, también cuando está vacía.
+
+Al cerrar esta pasada se propuso comparar estáticamente la cobertura del punto
+`0x26e17f0` y su ciclo de activación con v22 (que sí obtuvo invocaciones),
+incluyendo cuándo empieza la ventana respecto a preparación de escena/render.
+La traza actual no registra todas las entradas mientras el observador está
+pausado ni timestamps de apertura/cierre: no distingue llamadas previas a
+la apertura de una ruta de escena que no usa ese punto. No atribuir el cero
+a ninguna de esas hipótesis sin evidencia. No repetir la misma carga ni
+añadir hooks especulativos; diseñar la observación mínima después del análisis.
+La continuación posterior [localizó una ruta de upload nativo](NATIVE_RENDER_ROUTE.md)
+y resolvió fábrica/slot8 para el tipo 0x25f sin otra sonda. Por ello el análisis
+de cobertura queda como secundario; no es la próxima puerta obligatoria.
+
+Evidencia privada conservada:
+`evidence/context-forwarding-v28-21860-loader.json`,
+`evidence/context-forwarding-v28-21860-analysis.json`,
+`evidence/context-forwarding-v28-21860-observation.json` y
+`out/context-forwarding-20261018/window/Release/live_pair_probe_v28_21860.jsonl`.
+SHA-256 JSONL:
+`cfbf873c660bc248f7a341c719905f04e88c3f003dbcc47249c8cee87da41770`.
+El binario conserva el SHA-256 v28 registrado arriba y no debe sobrescribirse.

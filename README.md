@@ -97,7 +97,9 @@ A conventional game render becomes two depth-derived views, displayed in a separ
 
 PS VR2 Sense input is **not implemented**. The current experiments use a conventional controller for game input. The 3DoF proof of concept should not be mistaken for room-scale tracking or a finished mech cockpit.
 
-**Next engineering check (host/in-game diagnostic, not a headset test):** an isolated eight-second run of the already built **v28 context-forwarding observer** to establish whether the target CPU context is reached and whether its forwarded interface can be identified. This is a prerequisite investigation for matching the real per-frame projection to captured depth; no GPU binding has been demonstrated. See [verified status](docs/STATUS.md) and [the diagnostic evidence and next test](docs/RENDER_CONTEXT_PROVENANCE.md#única-observación-mínima-pendiente).
+**1 November engineering progress:** AC6's own [scene-view list and factory](docs/NATIVE_VIEW_ROUTE.md) have been located and observed in bounded CPU traces. The [resource census and factory argument capture](docs/NATIVE_VIEW_RESOURCES.md) verify 41 additional instruction anchors, identify shared primary color/depth outputs, and capture one natural main-view creation with restored hooks and a later matching holder census. The independent [per-eye DLSS contract](native/dlss_contract/README.md) validates declared inputs and stereo history on the host, without an NGX backend. Native stereo rendering and DLSS evaluation remain pending.
+
+The parallel [native render route](docs/NATIVE_RENDER_ROUTE.md) resolves upload, CBV creation and root-table consumption. One authorized unattended test recorded 4096 equal byte copies and 604 candidate upload/descriptor/draw associations. Capacity loss prevents accepting that recording as complete; frame-matched GPU matrix identity remains open. The [standalone observer and analyzer](native/native_constants_trace/README.md) retain that evidence without changing the accepted presenter. See [verified status](docs/STATUS.md).
 
 ## Technical documentation
 

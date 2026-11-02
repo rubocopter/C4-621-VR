@@ -1,5 +1,223 @@
 # Diario de investigación AC6 VR
 
+## 2026-11-02 — contexto y prepaso del renderer, solo análisis offline
+
+- Verificados con Capstone/pefile y fingerprint del ejecutable **66/66 sitios**:
+  11 en contexto/cierre, 13 en renderer, 6 en estado, 6 en prepaso y 30 en
+  configuración/despacho auxiliar del
+  propietario. Grafos seleccionados sin límites pendientes. Reporte privado
+  `evidence/native-frame-boundary-static-20261102-dispatch-v3.json`.
+- El caller del renderer abre y cierra rutas de contexto condicionales;
+  el renderer guarda un contexto compartido, activa y limpia estado y
+  llama al recorrido de vistas. El prepaso accede al holder/target y
+  contiene cambios de byte, contadores y flag del propietario. No se
+  deduce frame boundary, reentrancia ni segundo ojo seguro.
+- La continuación identifica una copia condicional de parámetros al target
+  (`target+0xc0`), una máscara derivada de cuatro contadores y un helper que
+  consulta un gate global y modifica campos por slot; además, una ruta
+  auxiliar condicional utiliza un owner global. Estas operaciones no tienen
+  procedencia demostrada de ojo ni relación confirmada con recursos GPU.
+- Añadidos verificador de lectura de PE, cinco tests sintéticos y
+  [informe de límites](docs/NATIVE_FRAME_BOUNDARY.md). Ningún juego ni
+  SteamVR iniciado; sin inyección de DLL ni cambios a la ruta de VR.
+
+## 2026-11-02 — referencia Elden Ring VR, únicamente fuentes
+
+- Revisado el árbol GPL-3.0 de `IlyaMez/EldenringVR` en el commit
+  `590c65e8988bf89aa7ff061e16da708195ee031a`, sin copiar código.
+  [Informe y referencias a líneas](docs/ELDEN_RING_VR_REFERENCE.md).
+- Identificado un segundo recorrido nativo de tareas de render por ojo, con
+  grupos restringidos por defecto, finalización de cámara por ojo, vigilancia
+  de `Present` y comprobaciones de transición. El código expone efectos de
+  simulación/acciones y riesgos de buffers GPU aun intentando congelar pasos.
+- Para AC6 siguen sin demostrarse la frontera reentrante, cierre de callbacks,
+  separación de color/depth/historia y asociación del ojo a un frame GPU.
+  Investigación y documentación offline; no se ha abierto el juego ni SteamVR.
+- Inspección read-only de bytes del PE con SHA esperado: `0x1292c0a` llama
+  directamente a `0x15194d0` y `0x1519564` a `0x2466510`, con un único
+  candidato `E8` hacia cada destino en secciones ejecutables respaldadas.
+  El primer punto está entre otras llamadas a rutinas aún no clasificadas;
+  `.pdata` no cubre ese RVA. No se infiere un límite de frame ni ausencia de
+  dispatch indirecto. Evidencia descrita en la referencia anterior.
+- Verificador de rutas sobre PE: 36/36 anclas base, 41/41 de ownership,
+  23/23 de dependencia, 23/23 de limpieza auxiliar, 10/10 slots de dependencia
+  y 5/5 de auxiliares. Informe privado
+  `evidence/native-view-verified-20261102-source-review.json`.
+- Revalidación offline: **138** tests Python (137 pasan, uno opcional omitido),
+  **29/29** CTests `Release` (8 DLSS, 10 traza, 10 fábrica y 1 constantes),
+  Python `compileall` y `git diff --check` correctos. El primer intento CTest
+  sin `-C Release` no ejecutó tests por generador multiconfiguración;
+  repetido con `Release` y correcto. No se hicieron cambios binarios ni
+  pruebas de visor.
+
+## 2026-11-01 — continuación sin abrir el juego
+
+- Análisis exclusivo del PE verificado por SHA-256, sin iniciar AC6, SteamVR,
+  inyección ni lectura de memoria de un proceso. Conservados los cambios previos.
+- Seguido el constructor del subobjeto `owner+0x6d8` mediante un salto a otra
+  sección ejecutable; verificadas dos tablas de cinco slots, dos flags iniciales,
+  propagación por `descriptor+0x68` y cuatro referencias en objetos auxiliares.
+- Identificado en el destructor del owner el desregistro y decremento de
+  referencia de la vista antes del desmontaje de ese subobjeto. No se ha
+  demostrado que los callbacks auxiliares queden cancelados antes de liberar
+  la memoria del owner; esa prueba sigue bloqueando una segunda vista.
+- Verificador ampliado: 36/36 anclas de vista, 41/41 de ownership, 23/23 de
+  dependencia, nueve slots previos y diez slots adicionales; todos coinciden.
+  Evidencia privada `evidence/native-view-dependency-teardown-20261101.json`.
+  Añadida regresión sintética para rechazo de slots sin respaldo ejecutable.
+- Seguidas cinco inserciones de wrappers en la lista de vista y su limpieza
+  condicional en el destructor base. Se ha demostrado en el PE un decremento
+  por wrapper y destrucción virtual cuando su referencia llega a cero. El owner
+  solo invoca el destructor de la vista si su contador llega a cero; el cierre
+  de callbacks externos o retenidos sigue sin demostrar. El destructor del
+  wrapper desmonta condicionalmente dos helpers anidados mediante destructor
+  virtual, llamada al allocator y limpieza del puntero. Los destructores de
+  esos helpers no contienen desregistro explícito de la dependencia del owner.
+  Nuevas 23/23 anclas estáticas y cinco slots de destructores verificados;
+  informe privado `evidence/native-view-nested-aux-allocator-static-20261101.json`.
+- Batería Python offline: 138 tests, 137 correctos y uno GPU opcional omitido.
+  Compilación Python, `git diff --check` y 29 CTests host pasan: 8 DLSS,
+  10 de traza de vistas, 10 de fábrica y 1 de constantes. No se abrió AC6,
+  SteamVR ni se inyectaron DLLs en esta continuación.
+
+## 2026-11-01 — recursos compartidos y captura de creación de vista
+
+- Continuación solicitada por el usuario. Backup adicional de siete archivos
+  (117,6 MB): `C:/Users/Oni/.universal-modder/backups/ac6-view-resources-20261101/20261101-163130.zip`.
+  Launcher cooperativo instalado, PID 18948, ajuste Sin conexión verificado
+  visualmente. Sin multijugador ni SteamVR. Trabajo previo preservado.
+- Añadidas 41 anclas estáticas a las 36/nueve slots previos. Se siguieron
+  constructor/inicializador de targets, borrow/refcounts de salidas y pool de
+  estado de render por vista. REA verificó identidad; las instrucciones son
+  análisis Capstone/pefile local. [Informe](docs/NATIVE_VIEW_RESOURCES.md).
+- Lector `--resources` con handle 0x410: 31/31 muestras coherentes en garaje
+  corregido y 31/31 en sala AC cargada. Color/depth principales iguales a
+  salidas globales en ambas; cambian target-set, velocidad y depth interno.
+  No se interpreta igualdad/diferencia de punteros como backing GPU ni frame.
+- Corregida selección inicial del global de owner al seguir RDX de fábrica:
+  0x4f71c70, no el allocator 0x4f71cc8. Observada regresión roja y tests verdes
+  antes de repetir lectura. Un log llamado ac-test aún se tomó ante el diálogo
+  del garaje; se conserva sin usar para gameplay, sustituido por ac-verified.
+- Sonda independiente de una llamada natural a fábrica al volver a Continuar:
+  descriptor 0x70, auxiliar 0x18 y parámetros de targets 0x78. Una llamada
+  admitida/completada, máscara 15, cero pendientes, prólogo restaurado; la
+  lectura externa posterior verifica código y el resultado coincide con el
+  holder en 21/21 muestras. DLL retenida inactiva hasta el cierre normal.
+- El analizador liga PID/FILETIME/base y exige tick de comienzo de censo
+  estrictamente posterior al cierre de captura. La revisión encontró el hueco
+  de orden temporal y quedó corregido con regresiones. El descriptor contiene
+  un enlace al objeto embebido owner+0x6d8; su uso/vida compartida queda como
+  siguiente puerta antes de construir otra vista. No reproducir punteros del log.
+- Diez CTests nuevos de fábrica y nueve tests Python de su análisis pasan;
+  suite Python completa: 137 tests, 136 pasan y uno GPU opcional omitido.
+  Las pruebas nativas cubren también SEH, concurrencia y cierre pendiente.
+  Revisión nativa sin bloqueos pendientes. CI ampliada, sin afirmar ejecución
+  remota. Sin cambios de protocolo/presentador ni evaluación DLSS/segunda vista.
+- Se regresó al garaje y se utilizó Guardar y cerrar desde Sistema; ausencia
+  del proceso confirmada. Sin descarga forzada de DLL. Configuración sigue
+  Sin conexión, backups conservados. Artefactos, hashes y ventanas válidas en
+  el informe; sin commits/publicación de esta continuación.
+
+## 2026-11-01 — ruta propia de vistas AC6 y contrato temporal DLSS
+
+- Continuación autorizada con el PC disponible. Identificado de nuevo el
+  ejecutable exacto mediante REA; seguimiento local con Capstone/pefile para
+  evitar el timeout global anterior. Encontradas lista, recorrido, alta/baja,
+  fábrica, constructor y destructor de vista; verificador reproducible con
+  **36 instrucciones y 9 slots** comprobados. No se copiaron offsets ni código
+  DS3. Detalle y límites en [vistas nativas](docs/NATIVE_VIEW_ROUTE.md).
+- Hallazgo de ownership: el destructor libera el enlace de cámara de la vista.
+  No se comparte el enlace de la vista principal para fabricar un segundo ojo.
+  El conjunto de targets requiere estudiar sus recursos internos por separado.
+- Backup previo a arrancar: `C:/Users/Oni/.universal-modder/backups/ac6-native-views-20261101/20261101-132406.zip`
+  (7 archivos, 117,6 MB). Arranque con el launcher cooperativo instalado;
+  `ac6_coop.dll` observado, sin EAC conocido. Se cambió el ajuste de inicio a
+  **Sin conexión** y se volvió al título para aplicarlo. Sin sesión multijugador.
+- Observador externo con handle `0x410`, sin escrituras/hooks: **31/31** muestras
+  coherentes en garaje y **31/31** en PRUEBA DE AC individual, PID 9428. La vista,
+  cámara y escena mantuvieron identidad entre ambas ventanas; cambiaron los
+  targets. Es censo de identidades, no asociación por fotograma ni prueba GPU.
+- Implementado [contrato C++17 DLSS](native/dlss_contract/README.md), sin NGX ni
+  adapter de producción: admisión por ojo, jitter/proyección, depth/movimiento,
+  snapshots y commit conjunto de historias, rechazo de tickets ajenos/obsoletos,
+  replay y resets. Ocho grupos CTest pasan, con red inicial conservado. La
+  revisión independiente reforzó tests de resets/fallos sin hallar defectos
+  de implementación. No hay evaluación DLSS ni mejora de rendimiento medida.
+- La revisión del observador detectó y corrigió preflight ligado solo a PID;
+  ahora identidad/módulos proceden del mismo handle retenido. Se añadieron
+  11 regresiones Win32/ABI. El verificador trata ramas `LOOP` explícitamente;
+  la revisión posterior no encontró problemas pendientes en esos componentes.
+- Sonda separada de dos entradas nativas: diez grupos CTest pasan; una carga
+  en PRUEBA DE AC registró cuatro recorridos y cuatro renders de la vista
+  principal, ocho eventos sin pérdidas/callbacks pendientes. Restauración de
+  ambos hooks comprobada también por lectura externa; 11/11 identidades
+  coherentes después y juego respondiendo. DLL/log/hashes en el informe.
+  El analizador rechaza ventanas incompletas/concurrentes y conserva asociación
+  GPU falsa; sus falsas aceptaciones encontradas en revisión quedaron cubiertas
+  por regresiones. No se creó segunda vista ni se escribió cámara/estado GPU.
+- Validación final local: 116 tests Python, 115 pasan y uno GPU opcional
+  omitido; nueve tests del analizador de constantes, diez CTests de la sonda
+  de vistas y ocho CTests DLSS pasan. `git diff --check` sin errores. CI
+  ampliada, sin ejecución remota afirmada. Tras regresar al garaje se utilizó
+  «Guardar la partida y cerrar la aplicación»; cierre confirmado por ausencia
+  del proceso. El ajuste de inicio queda Sin conexión; el backup se conserva.
+- Cambios en checkout compartido preservando trabajo previo; sin commit,
+  publicación ni cambio de protocolo/presentador. La aceptación PSVR2 sigue
+  siendo la del 18-10; no se lanzó SteamVR en este ensayo.
+
+## 2026-11-01 — comparación de las dos rutas DS3 VR propuestas
+
+- Ampliación solicitada por el usuario: tratar DLSS como hito propio después
+  de establecer vistas VR coherentes. Se documentan feature/historia por ojo,
+  jitter, depth/movimiento, punto de inserción, resets y diagnóstico. Se
+  distingue movimiento reconstruido de cámara de velocidades de objetos;
+  el rendimiento y la calidad AC6 requieren su propia medición. Detalle en
+  [la sección DLSS](docs/DS3_NATIVE_STEREO_REFERENCE.md#dlss-como-hito-propio-después-de-establecer-la-ruta-vr).
+
+- Inspeccionado `junglejuz/Dark-Souls-III-VR-Native`, commit
+  `441792c4d63ee8c945913d65aa434839263fca39` del 01-11, y comprobado que
+  `scubasteve2365/DS3-VR` sigue en `14909f48da7ebb709af6a38c33fbc27cc91fd4a6`.
+  Consulta KB `um kb search "Dark Souls III native stereo"`: sin resultados;
+  issues abiertos/cerrados: cero en ambas consultas.
+- Diferencia concreta: junglejuz construye/lista una segunda vista de escena
+  con cámara propia; scubasteve consume estéreo geo-11. La llamada doble al
+  render completo figura como experimento fallido y desactivado en el primero.
+  Esto orienta una búsqueda estática de lista/fábrica de vistas en AC6,
+  compatible con continuar la procedencia de constantes ya localizada.
+- Revisados además proyección descentrada, captura antes de sobrescribir
+  targets/depth compartidos, historiales, sombras/culling, matrices relativas
+  a cámara, DLSS por ojo y alternativa AFW. Capturas por votación y selección
+  de matrices por lente/posición siguen siendo heurísticas; no prueban nuestra
+  asociación D3D12 por frame. Las menciones a AC6 de sus comentarios no son
+  hallazgos independientes de nuestro binario.
+- Informe con fuentes fijadas y límites:
+  [DS3_NATIVE_STEREO_REFERENCE](docs/DS3_NATIVE_STEREO_REFERENCE.md).
+  Solo investigación de fuentes, sin compilación, juego/SteamVR, sondas ni
+  código tercero incorporado. Se preservan la ruta aceptada y cambios previos.
+
+## 2026-10-30 — referencia DS3-VR sugerida por el usuario
+
+- Revisado `scubasteve2365/DS3-VR` mediante GitHub, commit
+  `14909f48da7ebb709af6a38c33fbc27cc91fd4a6` del 29-10; README, cámara,
+  presentación, constantes/DLSS, traza de draws, HUD, escala y licencia.
+  Issues abiertos/cerrados: cero en la consulta. La búsqueda KB
+  `um kb search "Dark Souls 3 VR"` no aportó un caso específico.
+- Hallazgos útiles: exportación virtual de cámara antes del renderer,
+  layout DS3 `cbSceneParam` en VS b8, seguimiento de uploads, selección de
+  escena por su consumo en postprocesado, capas projection OpenXR y
+  separación del HUD/marcador de lock-on. Detalles y fuentes fijadas en
+  [DS3_VR_REFERENCE](docs/DS3_VR_REFERENCE.md).
+- Límite: el estéreo procede de geo-11/fix Helifax en D3D11, ausentes del
+  código propio publicado. No acredita un render-view reentrante ni una
+  solución D3D12 para AC6. Cámara mayoritaria, pose por lag y pairing
+  actual/anterior son heurísticas; no cierran nuestra procedencia por frame.
+- Se registra como hipótesis contrastable el layout/uso de constantes en
+  shaders y uploads AC6. Offsets, registros y calibración DS3 no se trasladan;
+  incluso los campos de aspecto de las vistas difieren. No se repite v28.
+- Investigación de fuentes únicamente: sin compilar/ejecutar DS3-VR, cargar
+  sondas, iniciar juegos/SteamVR ni incorporar código tercero. Sin aceptación
+  física nueva. Se conserva íntegro el trabajo previo del repositorio.
+
 ## 2026-10-15 — reconocimiento inicial
 
 - Confirmada la instalación local y los mods de primera persona y cooperativo. `um scan` detectó tecnología FromSoftware, ejecutable x64 y Easy Anti-Cheat, sin otro cargador detectado.
@@ -389,3 +607,68 @@ La primera persona ya está probada por el usuario y Depth of Field ya está des
 - Repetición host: 68 tests Python (67 correctos, 1 integración GPU opcional
   omitida) y 8/8 CTests del diagnóstico v28. La traza in-game v28 y la
   asociación de matrices por frame continúan pendientes.
+
+## 2026-10-21 — v28 presencial: ventana abierta, sin cobertura de contexto
+
+- Usuario presente en partida, con confirmación expresa de misión offline
+  y autorización de v28. Una sola carga en PID 21860, sin visor/consumidor,
+  seguimiento, screenshots ni apertura de SteamVR.
+- Ocho segundos: 3 pares, 146 listas, procedencia de captura válida y cero
+  overflow; una cola DIRECT, 716 descartes por backpressure y ningún fallo.
+- `window_started:true`, cero invocaciones/candidatos de forwarding y 145020
+  llamadas al helper sin token: `no_coverage`, sin binding GPU ni matriz
+  asociada al frame. La causa de ausencia de llamadas sigue sin aislar.
+- Nueve hooks restaurados según sonda, loader con código 0 y comprobación
+  posterior de solo lectura de prólogos de cámara/helper/contexto correcta;
+  proceso respondiendo y DLL retenida inactiva. No se repitió la carga.
+- Evidencia privada `evidence/context-forwarding-v28-21860-{loader,analysis,observation}.json`;
+  log SHA-256 `cfbf873c660bc248f7a341c719905f04e88c3f003dbcc47249c8cee87da41770`.
+  Próxima investigación: comparar cobertura y ciclo de ventana con v22 antes
+  de diseñar otra observación; detalle en `docs/RENDER_CONTEXT_PROVENANCE.md`.
+
+## 2026-10-21 — aplicación de referencias VR al renderer, sin nueva sonda
+
+- Tras la petición de evitar ensayos presenciales repetidos se priorizó el
+  consumidor nativo de constantes, siguiendo la técnica de Cyberpunk VR y
+  separando preparación/render como en DL2/UEVR. El usuario dejó la zona de
+  prueba disponible para ensayos automáticos; no se inició SteamVR.
+- Una lectura acotada y repetida de metadata de tipos, con handle de solo
+  lectura en PID 21860, identificó 25 registros. Para el tipo 0x25f se siguió
+  fábrica `0x26d1ce0` → constructor `0x26d18c0` → vtable `0x3fe0e78` → slot8
+  `0x26d1f50`. No identifica por sí sola la hija histórica de v22 ni su frame.
+- Se siguió paquete `+0x930` (matriz de 64 bytes dentro de bloque de 80) hasta
+  `0x273ed40` → uploader `0x2462320` → asignación/memcpy y registro de binding;
+  la rama de dibujo llega a `0x2378fd0`/`DrawInstanced`. Falta binding GPU y
+  correspondencia con depth. No se cargó otra DLL ni se cambiaron matrices.
+- REA verificó identidad del PE, pero el análisis Ghidra agotó 330 s y Rizin
+  no estaba disponible. Los hallazgos de instrucciones proceden de
+  Capstone/pefile y se etiquetan aparte; 19 sitios y fábrica/vtable cotejados.
+- Se retira repetir cobertura v28 como siguiente gate. Prioridad: consumidor
+  de descriptores y versión de upload; `docs/NATIVE_RENDER_ROUTE.md` conserva
+  límites, evidencia privada y la condición para una futura ejecución útil.
+
+## 2026-10-21 — puente CBV resuelto y una prueba automática de constantes
+
+- Siguiendo el registro de uploads de Cyberpunk VR y la separación entre
+  preparación/render de DL2/UEVR, se resolvió el consumidor nativo de tablas,
+  serialización de root parameters y puente CBV `0x28f8a50`. Quinto argumento
+  preservado; layouts y receptores D3D12 cotejados en 49 comprobaciones
+  estáticas. No se copió código de esas referencias.
+- Bajo la autorización de misión offline y zona de prueba desatendida, una
+  carga de ocho segundos observó upload/resolver/draw/tabla/CBV, sin SteamVR,
+  cambios de matrices ni trabajo GPU añadido. Cinco hooks restaurados con
+  `MH_OK`, cero callbacks al volcado y prólogos comprobados por lectura
+  independiente; PID 21860 siguió abierto. v28 no se repitió.
+- 4096 copias completas byte a byte, 32768 eventos y 604 asociaciones
+  candidatas. Incluyen 64 del bloque de 80 bytes a root 7, 64 de 656 a root 0
+  y 64 de 832 a root 28. Overflow de 759796 uploads/4925798 eventos: ventana
+  incompleta, sin aceptación de binding/matriz por frame ni prueba GPU.
+- Código y analizador conservados en `native/native_constants_trace/`;
+  fuente posterior cierra tras muestra breve, marca cutoff/primera pérdida y
+  rechaza páginas guardadas. 1/1 CTest y 9 tests Python correctos, con revisión
+  independiente. Esas mejoras posteriores solo se probaron en host; no se
+  cargó otra DLL ni se sobrescribió la mapeada. Producción y visor conservan
+  el alcance previo.
+- Detalle, hashes y evidencia en `docs/NATIVE_RENDER_ROUTE.md`. El tramo
+  pendiente es generación/versión de command list y recurso depth capturado,
+  no otra prueba de cobertura del scope CPU antiguo.
